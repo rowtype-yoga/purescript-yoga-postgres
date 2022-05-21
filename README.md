@@ -1,6 +1,6 @@
 # 💾 purescript-yoga-postgres
 
-**Note**: This is a fork of [node-postgres](https://github.com/epost/purescript-node-postgres) ([MIT Licence](./LICENSE/purescript-node-postgress.LICENSE)).
+**Note**: This is a fork of [purescript-node-postgres](https://github.com/epost/purescript-node-postgres) ([MIT Licence](./LICENSE/purescript-node-postgress.LICENSE)).
 
 
 PureScript bindings for the [pg library](https://www.npmjs.org/package/pg) ([node-postgres](https://github.com/brianc/node-postgres) on GitHub).
