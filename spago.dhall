@@ -1,4 +1,4 @@
-{ name = "purescript-yoga-postgres"
+{ name = "yoga-postgres"
 , dependencies =
   [ "aff"
   , "arrays"

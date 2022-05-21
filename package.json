@@ -1,6 +1,6 @@
 {
-  "name": "purescript-node-postgres",
-  "version": "5.0.0",
+  "name": "purescript-yoga-postgres",
+  "version": "1.0.0",
   "description": "PureScript bindings for the pg PostgreSQL library",
   "main": "index.js",
   "directories": {
@@ -20,7 +20,6 @@
     "database",
     "sql"
   ],
-  "author": "Erik Post",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/epost/purescript-node-postgres/issues"
