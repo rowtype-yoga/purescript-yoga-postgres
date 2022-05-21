@@ -1,4 +1,4 @@
-module Database.Postgres.SqlValue
+module Yoga.Postgres.SqlValue
   ( SqlValue()
   , class IsSqlValue
   , toSql

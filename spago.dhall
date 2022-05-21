@@ -1,4 +1,4 @@
-{ name = "purescript-node-postgres"
+{ name = "purescript-yoga-postgres"
 , dependencies =
   [ "aff"
   , "arrays"
@@ -17,4 +17,7 @@
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
+, license = "MIT"
+, repository = "https://github.com/rowtype-yoga/purescript-yoga-postgres.git"
+, 
 }

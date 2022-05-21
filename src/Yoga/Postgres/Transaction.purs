@@ -1,11 +1,11 @@
-module Database.Postgres.Transaction where
+module Yoga.Postgres.Transaction where
 
 import Prelude
 import Effect.Aff (Aff, attempt)
 import Control.Monad.Error.Class (throwError)
 import Data.Either (either)
 
-import Database.Postgres (Client, Query(Query), execute_)
+import Yoga.Postgres (Client, Query(Query), execute_)
 
 -- | Runs an asynchronous action in a database transaction. The transaction
 -- | will be rolled back if the computation fails and committed otherwise.

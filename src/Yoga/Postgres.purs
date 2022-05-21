@@ -1,4 +1,4 @@
-module Database.Postgres
+module Yoga.Postgres
   ( Query(..)
   , Client
   , Pool
@@ -27,7 +27,7 @@ import Data.Array ((!!))
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(Just, Nothing), maybe)
 import Data.Traversable (sequence)
-import Database.Postgres.SqlValue (SqlValue)
+import Yoga.Postgres.SqlValue (SqlValue)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, bracket)
 import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
