@@ -1,4 +1,4 @@
-# purescript-yoga-postgres
+# 💾 purescript-yoga-postgres
 
 **Note**: This is a fork of [node-postgres](https://github.com/epost/purescript-node-postgres) ([MIT Licence](./LICENSE/purescript-node-postgress.LICENSE)).
 
