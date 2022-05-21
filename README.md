@@ -18,18 +18,21 @@ spago install yoga-postgres
 
 Build:
 
-```
+```bash
+spago build
+# or
 npm run build
 ```
 
 ## Testing
 
-```
+```bash
 # start a postgres database
 docker-compose up
 ```
 Then run the tests:
-
-```
+```bash
+spago -x test.dhall test
+# or
 npm run test
 ```
