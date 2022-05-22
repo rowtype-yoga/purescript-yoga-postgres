@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/epost/purescript-node-postgres.git"
+    "url": "git+https://github.com/rowtype-yoga/purescript-yoga-postgres.git"
   },
   "keywords": [
     "postgres",
@@ -22,9 +22,9 @@
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/epost/purescript-node-postgres/issues"
+    "url": "https://github.com/rowtype-yoga/purescript-yoga-postgres/issues"
   },
-  "homepage": "https://github.com/epost/purescript-node-postgres#readme",
+  "homepage": "https://github.com/rowtype-yoga/purescript-yoga-postgres#readme",
   "dependencies": {
     "pg": "^8.7.3"
   },
