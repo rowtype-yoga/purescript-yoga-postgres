@@ -2,7 +2,6 @@ module Test.Postgres.Schema where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Date (canonicalDate)
 import Data.DateTime (DateTime(..))
 import Data.Enum (toEnum)
@@ -17,8 +16,8 @@ import Foreign (Foreign, unsafeToForeign)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Prim.Boolean (True)
-import Test.Spec (Spec, around, describe, it)
-import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
+import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 import Yoga.Postgres as PG
 import Yoga.Postgres.Schema
@@ -781,15 +780,30 @@ spec = do
       it "builds nested parentheses" do
         (typedNestedParens # toSQL) `shouldEqual` "SELECT * FROM users WHERE (age > $a OR age < $b) AND name = $name"
 
+resetUsers :: PG.Connection -> Aff Unit
+resetUsers conn = do
+  _ <- PG.executeSimple (PG.SQL "DELETE FROM users") conn
+  _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE users_id_seq RESTART WITH 1") conn
+  _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
+    [ PG.toPGValue "Alice", PG.toPGValue "alice@example.com", PG.toPGValue 22 ]
+    conn
+  _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
+    [ PG.toPGValue "Bob", PG.toPGValue "bob@example.com", PG.toPGValue 30 ]
+    conn
+  pure unit
+
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
   describe "Builder query execution" do
     it "selectAll returns all rows" do
-      rows <- from usersTable # selectAll # runQuery conn {}
-      Array.length rows `shouldEqual` 2
-      let names = map _.name rows
-      names `shouldSatisfy` Array.elem "Alice"
-      names `shouldSatisfy` Array.elem "Bob"
+      resetUsers conn
+      rows <- from usersTable # select @"name, email, age"
+        # orderBy @"name"
+        # runQuery conn {}
+      rows `shouldEqual`
+        [ { name: "Alice", email: "alice@example.com", age: Just 22 }
+        , { name: "Bob", email: "bob@example.com", age: Just 30 }
+        ]
 
     it "select with columns returns projected rows" do
       rows <- from usersTable
@@ -801,6 +815,7 @@ integrationSpec conn = do
     it "select with alias" do
       rows <- from usersTable
         # select @"name, email AS e"
+        # orderBy @"name"
         # runQuery conn {}
       rows `shouldEqual`
         [ { name: "Alice", e: "alice@example.com" }
@@ -836,42 +851,40 @@ integrationSpec conn = do
         # select @"title, tags, view_count"
         # where_ @"title = $title"
         # runQuery conn { title: "Launch" }
-      Array.length rows `shouldEqual` 1
-      (map _.title rows) `shouldEqual` [ "Launch" ]
+      rows `shouldEqual` [ { title: "Launch", tags: [ "release", "v1" ], view_count: BigInt.fromInt 42 } ]
 
     it "inserts with returningAll" do
       rows <- from eventsTable
         # insert { title: "Minimal", metadata: Jsonb (unsafeToForeign {}), tags: ([] :: Array String), created_at: testDateTime, view_count: BigInt.fromInt 0 }
-        # returning @"id, title"
+        # returning @"title"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      (map _.title rows) `shouldEqual` [ "Minimal" ]
+      rows `shouldEqual` [ { title: "Minimal" } ]
 
     it "WHERE with JSONB @> operator" do
       rows <- from eventsTable
         # select @"title"
         # where_ @"metadata @> $metadata"
         # runQuery conn { metadata: Jsonb (unsafeToForeign { key: "value" }) }
-      Array.length rows `shouldEqual` 1
-      (map _.title rows) `shouldEqual` [ "Launch" ]
+      rows `shouldEqual` [ { title: "Launch" } ]
 
     it "WHERE with = ANY() array param" do
       rows <- from usersTable
         # select @"name"
         # where_ @"id = ANY($id)"
+        # orderBy @"name"
         # runQuery conn { id: [ 1, 2 ] }
-      Array.length rows `shouldSatisfy` (_ >= 1)
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
 
     it "complex where with multiple params" do
       rows <- from usersTable
-        # selectAll
+        # select @"name, age"
         # where_ @"name = $name AND age > $age"
         # runQuery conn { name: "Bob", age: 20 }
-      Array.length rows `shouldEqual` 1
-      (map _.age rows) `shouldEqual` [ Just 30 ]
+      rows `shouldEqual` [ { name: "Bob", age: Just 30 } ]
 
   describe "Builder insert execution" do
     it "inserts a row and returns count" do
+      resetUsers conn
       count <- from usersTable
         # insert { name: "Charlie", email: "charlie@example.com", age: Just 28 }
         # runExecute conn {}
@@ -880,19 +893,18 @@ integrationSpec conn = do
         # select @"name"
         # where_ @"name = $name"
         # runQuery conn { name: "Charlie" }
-      Array.length rows `shouldEqual` 1
+      rows `shouldEqual` [ { name: "Charlie" } ]
 
     it "inserts with RETURNING" do
       rows <- from usersTable
         # insert { name: "Diana", email: "diana@example.com" }
-        # returning @"id, name, email"
+        # returning @"name, email"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Diana" ]
-      (map _.email rows) `shouldEqual` [ "diana@example.com" ]
+      rows `shouldEqual` [ { name: "Diana", email: "diana@example.com" } ]
 
   describe "Builder update execution" do
     it "updates a row" do
+      resetUsers conn
       count <- from usersTable
         # set { email: "alice-updated@example.com" }
         # where_ @"name = $name"
@@ -902,9 +914,7 @@ integrationSpec conn = do
         # select @"email"
         # where_ @"name = $name"
         # runQueryOne conn { name: "Alice" }
-      case result of
-        Just r -> r.email `shouldEqual` "alice-updated@example.com"
-        Nothing -> shouldEqual "found" "nothing"
+      result `shouldEqual` Just { email: "alice-updated@example.com" }
 
     it "updates with RETURNING" do
       rows <- from usersTable
@@ -912,11 +922,11 @@ integrationSpec conn = do
         # where_ @"name = $name"
         # returning @"name, age"
         # runQuery conn { name: "Bob" }
-      Array.length rows `shouldEqual` 1
-      (map _.age rows) `shouldEqual` [ Just 99 ]
+      rows `shouldEqual` [ { name: "Bob", age: Just 99 } ]
 
   describe "Builder upsert execution" do
     it "ON CONFLICT DO NOTHING skips duplicate" do
+      resetUsers conn
       count <- from usersTable
         # insert { name: "Duplicate", email: "bob@example.com" }
         # onConflictDoNothing @"email"
@@ -929,26 +939,24 @@ integrationSpec conn = do
         # onConflict @"email" @"DO UPDATE SET name = EXCLUDED.name, age = EXCLUDED.age"
         # returning @"name, age"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Updated" ]
-      (map _.age rows) `shouldEqual` [ Just 40 ]
+      rows `shouldEqual` [ { name: "Updated", age: Just 40 } ]
 
   describe "Builder order by / limit / offset execution" do
     it "ORDER BY sorts results" do
+      resetUsers conn
       rows <- from usersTable
         # select @"name"
         # orderBy @"name ASC"
         # runQuery conn {}
-      let names = map _.name rows
-      names `shouldEqual` (Array.sort names)
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
 
     it "LIMIT restricts row count" do
       rows <- from usersTable
-        # selectAll
+        # select @"name"
         # orderBy @"name"
         # limit @"1"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
+      rows `shouldEqual` [ { name: "Alice" } ]
 
     it "OFFSET skips rows" do
       rows <- from usersTable
@@ -957,16 +965,11 @@ integrationSpec conn = do
         # limit @"1"
         # offset @"1"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      allRows <- from usersTable
-        # select @"name"
-        # orderBy @"name ASC"
-        # runQuery conn {}
-      let allNames = map _.name allRows
-      (map _.name rows) `shouldEqual` (Array.take 1 (Array.drop 1 allNames))
+      rows `shouldEqual` [ { name: "Bob" } ]
 
   describe "Builder delete execution" do
     it "deletes with RETURNING" do
+      resetUsers conn
       _ <- from usersTable
         # insert { name: "ToDelete", email: "delete@example.com", age: Just 50 }
         # runExecute conn {}
@@ -975,24 +978,25 @@ integrationSpec conn = do
         # where_ @"name = $name"
         # returning @"name, email"
         # runQuery conn { name: "ToDelete" }
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "ToDelete" ]
-      -- Verify actually deleted
+      rows `shouldEqual` [ { name: "ToDelete", email: "delete@example.com" } ]
       result <- from usersTable
-        # selectAll
+        # select @"name"
         # where_ @"name = $name"
         # runQueryOne conn { name: "ToDelete" }
       result `shouldEqual` Nothing
 
   describe "Builder JOIN execution" do
     it "INNER JOIN returns matching rows" do
+      resetUsers conn
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
         # select @"users.name, posts.title"
+        # orderBy @"users.name"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 2
-      (map _.name rows) `shouldSatisfy` Array.elem "Alice"
-      (map _.title rows) `shouldSatisfy` Array.elem "Alice's Post"
+      rows `shouldEqual`
+        [ { name: "Alice", title: "Alice's Post" }
+        , { name: "Bob", title: "Bob's Post" }
+        ]
 
     it "INNER JOIN with WHERE filters correctly" do
       rows <- from usersTable
@@ -1000,18 +1004,18 @@ integrationSpec conn = do
         # select @"users.name, posts.title"
         # where_ @"users.age > $age"
         # runQuery conn { age: 25 }
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Bob" ]
-      (map _.title rows) `shouldEqual` [ "Bob's Post" ]
+      rows `shouldEqual` [ { name: "Bob", title: "Bob's Post" } ]
 
     it "INNER JOIN with aliases" do
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
         # select @"users.name AS author, posts.title AS post_title"
+        # orderBy @"users.name"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 2
-      (map _.author rows) `shouldSatisfy` Array.elem "Alice"
-      (map _.post_title rows) `shouldSatisfy` Array.elem "Bob's Post"
+      rows `shouldEqual`
+        [ { author: "Alice", post_title: "Alice's Post" }
+        , { author: "Bob", post_title: "Bob's Post" }
+        ]
 
     it "INNER JOIN with ORDER BY and LIMIT" do
       rows <- from usersTable
@@ -1020,8 +1024,7 @@ integrationSpec conn = do
         # orderBy @"users.name ASC"
         # limit @"1"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Alice" ]
+      rows `shouldEqual` [ { name: "Alice", title: "Alice's Post" } ]
 
     it "LEFT JOIN includes unmatched rows" do
       _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
@@ -1032,11 +1035,11 @@ integrationSpec conn = do
         # select @"users.name, posts.title"
         # orderBy @"users.name ASC"
         # runQuery conn {}
-      Array.length rows `shouldSatisfy` (_ >= 3)
-      let noPostRow = Array.find (\r -> r.name == "NoPost") rows
-      case noPostRow of
-        Just r -> r.title `shouldEqual` Nothing
-        Nothing -> shouldEqual "found" "nothing"
+      rows `shouldEqual`
+        [ { name: "Alice", title: Just "Alice's Post" }
+        , { name: "Bob", title: Just "Bob's Post" }
+        , { name: "NoPost", title: Nothing }
+        ]
       _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
         [ PG.toPGValue "NoPost" ]
         conn
@@ -1048,23 +1051,22 @@ integrationSpec conn = do
         # select @"users.name, posts.title"
         # where_ @"users.name = $name"
         # runQueryOne conn { name: "Alice" }
-      case result of
-        Just r -> r.title `shouldEqual` "Alice's Post"
-        Nothing -> shouldEqual "found" "nothing"
+      result `shouldEqual` Just { name: "Alice", title: "Alice's Post" }
 
   describe "Parameterized LIMIT/OFFSET execution" do
     it "parameterized LIMIT restricts rows" do
+      resetUsers conn
       rows <- from usersTable # select @"name" # orderBy @"name"
         # limit @"$n"
         # runQuery conn { n: 1 }
-      Array.length rows `shouldEqual` 1
+      rows `shouldEqual` [ { name: "Alice" } ]
 
     it "parameterized OFFSET skips rows" do
       rows <- from usersTable # select @"name" # orderBy @"name"
         # limit @"$n"
         # offset @"$off"
         # runQuery conn { n: 1, off: 1 }
-      Array.length rows `shouldEqual` 1
+      rows `shouldEqual` [ { name: "Bob" } ]
 
     it "parameterized LIMIT with WHERE" do
       rows <- from usersTable # select @"name"
@@ -1072,62 +1074,69 @@ integrationSpec conn = do
         # orderBy @"name"
         # limit @"$n"
         # runQuery conn { age: 0, n: 1 }
-      Array.length rows `shouldEqual` 1
+      rows `shouldEqual` [ { name: "Alice" } ]
 
   describe "UNION / INTERSECT / EXCEPT execution" do
     it "UNION deduplicates" do
+      resetUsers conn
       rows <-
         (from usersTable # select @"name")
-          `union` (from usersTable # select @"name")
+          # union (from usersTable # select @"name")
+          # orderBy @"name"
           # runQuery conn {}
-      Array.length rows `shouldEqual` 2
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
 
     it "UNION ALL keeps duplicates" do
       rows <-
         (from usersTable # select @"name")
-          `unionAll` (from usersTable # select @"name")
+          # unionAll (from usersTable # select @"name")
+          # orderBy @"name"
           # runQuery conn {}
-      Array.length rows `shouldEqual` 4
+      rows `shouldEqual`
+        [ { name: "Alice" }
+        , { name: "Alice" }
+        , { name: "Bob" }
+        , { name: "Bob" }
+        ]
 
     it "UNION with params from both sides" do
       rows <-
         (from usersTable # select @"name" # where_ @"age > $a")
           `union` (from usersTable # select @"name" # where_ @"age < $b")
           # runQuery conn { a: 100, b: 0 }
-      Array.length rows `shouldEqual` 0
+      rows `shouldEqual` []
 
     it "INTERSECT returns common rows" do
       rows <-
         (from usersTable # select @"name")
-          `intersect` (from usersTable # select @"name")
+          # intersect (from usersTable # select @"name")
+          # orderBy @"name"
           # runQuery conn {}
-      Array.length rows `shouldEqual` 2
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
 
     it "EXCEPT removes matching rows" do
       rows <-
         (from usersTable # select @"name")
           `except_` (from usersTable # select @"name" # where_ @"name = $name")
           # runQuery conn { name: "Alice" }
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Bob" ]
+      rows `shouldEqual` [ { name: "Bob" } ]
 
     it "UNION with ORDER BY and LIMIT" do
       rows <-
-        from usersTable # select @"name"
-          # union (from usersTable # select @"name")
+        (from usersTable # select @"name")
+          `union` (from usersTable # select @"name")
           # orderBy @"name"
           # limit @"1"
           # runQuery conn {}
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Alice" ]
+      rows `shouldEqual` [ { name: "Alice" } ]
 
   describe "WHERE features execution" do
     it "BETWEEN filters range" do
+      resetUsers conn
       rows <- from usersTable # select @"name"
         # where_ @"age BETWEEN $lo AND $hi"
         # runQuery conn { lo: 20, hi: 26 }
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Alice" ]
+      rows `shouldEqual` [ { name: "Alice" } ]
 
     it "IS NULL matches null values" do
       _ <- from usersTable
@@ -1136,7 +1145,7 @@ integrationSpec conn = do
       rows <- from usersTable # select @"name"
         # where_ @"age IS NULL"
         # runQuery conn {}
-      (map _.name rows) `shouldSatisfy` Array.elem "NullAge"
+      rows `shouldEqual` [ { name: "NullAge" } ]
       _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
         [ PG.toPGValue "NullAge" ]
         conn
@@ -1148,8 +1157,9 @@ integrationSpec conn = do
         # runExecute conn {}
       rows <- from usersTable # select @"name"
         # where_ @"age IS NOT NULL"
+        # orderBy @"name"
         # runQuery conn {}
-      (map _.name rows) `shouldSatisfy` (not <<< Array.elem "NullAge2")
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
       _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
         [ PG.toPGValue "NullAge2" ]
         conn
@@ -1159,4 +1169,4 @@ integrationSpec conn = do
       rows <- from usersTable # select @"name"
         # where_ @"(age > $a OR age < $b) AND name = $name"
         # runQuery conn { a: 100, b: 0, name: "Alice" }
-      Array.length rows `shouldEqual` 0
+      rows `shouldEqual` ([] :: Array { name :: String })
