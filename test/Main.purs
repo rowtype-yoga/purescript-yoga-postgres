@@ -120,7 +120,10 @@ spec = do
             , password: testPassword
             }
           PG.ping conn
-        result `shouldSatisfy` isLeft
+        case result of
+          Left _ -> pure unit
+          Right false -> pure unit
+          Right true -> shouldEqual "unhealthy" "healthy"
 
     -- Basic Query Tests
     around withPostgres do

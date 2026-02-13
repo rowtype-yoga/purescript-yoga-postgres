@@ -513,24 +513,23 @@ integrationSpec conn = do
         # select @"name, email"
         # where_ @"age > $age"
         # runQuery conn { age: 25 }
-      Array.length rows `shouldEqual` 1
-      (map _.name rows) `shouldEqual` [ "Bob" ]
+      rows `shouldEqual` [ { name: "Bob", email: "bob@example.com" } ]
 
     it "select with alias" do
       rows <- from usersTable
         # select @"name, email AS e"
         # runQuery conn {}
-      Array.length rows `shouldEqual` 2
-      (map _.e rows) `shouldSatisfy` Array.elem "alice@example.com"
+      rows `shouldEqual`
+        [ { name: "Alice", e: "alice@example.com" }
+        , { name: "Bob", e: "bob@example.com" }
+        ]
 
     it "runQueryOne returns Just for match" do
       result <- from usersTable
         # select @"name, email"
         # where_ @"name = $name"
         # runQueryOne conn { name: "Alice" }
-      case result of
-        Just r -> r.email `shouldEqual` "alice@example.com"
-        Nothing -> shouldEqual "found" "nothing"
+      result `shouldEqual` Just { name: "Alice", email: "alice@example.com" }
 
     it "runQueryOne returns Nothing for no match" do
       result <- from usersTable
