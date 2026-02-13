@@ -1767,6 +1767,14 @@ class HasClause label row
 
 instance Row.Cons label Unit rest row => HasClause label row
 
+class HasAnyDML :: Row Type -> Constraint
+class HasAnyDML stage
+
+instance Row.Cons "select" Unit rest stage => HasAnyDML stage
+else instance Row.Cons "set" Unit rest stage => HasAnyDML stage
+else instance Row.Cons "delete" Unit rest stage => HasAnyDML stage
+else instance Fail (Text "WHERE requires a preceding SELECT, UPDATE (set), or DELETE") => HasAnyDML stage
+
 toSQL :: forall tables result params stage. Q tables result params stage -> String
 toSQL (Q q) = q.sql
 
@@ -1851,6 +1859,7 @@ where_
   :: forall @whr tables result params p stage stage'
    . IsSymbol whr
   => ParseWhere whr tables params
+  => HasAnyDML stage
   => Row.Lacks "where" stage
   => Row.Lacks "insert" stage
   => Row.Lacks "groupBy" stage
