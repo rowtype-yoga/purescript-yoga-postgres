@@ -4,8 +4,11 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array (intercalate, mapWithIndex, foldl)
+import Data.DateTime (DateTime)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype)
 import Data.Nullable (toNullable)
+import JS.BigInt (BigInt)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String.Regex (regex, replace') as Regex
@@ -60,6 +63,14 @@ data DefaultBool :: Boolean -> Type
 data DefaultBool a
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- JSONB type wrapper
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype Jsonb = Jsonb Foreign
+
+derive instance Newtype Jsonb _
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -89,6 +100,18 @@ instance PGTypeName Boolean where
 
 instance PGTypeName Number where
   pgTypeName _ = "DOUBLE PRECISION"
+
+instance PGTypeName DateTime where
+  pgTypeName _ = "TIMESTAMPTZ"
+
+instance PGTypeName BigInt where
+  pgTypeName _ = "BIGINT"
+
+instance PGTypeName Jsonb where
+  pgTypeName _ = "JSONB"
+
+instance PGTypeName a => PGTypeName (Array a) where
+  pgTypeName _ = pgTypeName (Proxy :: Proxy a) <> "[]"
 
 instance PGTypeName a => PGTypeName (Maybe a) where
   pgTypeName _ = pgTypeName (Proxy :: Proxy a)
@@ -375,6 +398,12 @@ else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "
 else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "(" tail acc cols
 else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ")" tail acc cols
 else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "," tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "'" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "@" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "?" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ":" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "~" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "#" tail acc cols
 
 -- End of string: flush final word
 else instance
@@ -803,6 +832,13 @@ else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsO
 else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "!" tail acc currentType cols paramsIn paramsOut
 else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "(" tail acc currentType cols paramsIn paramsOut
 else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ")" tail acc currentType cols paramsIn paramsOut
+-- JSONB / extra operators and string literals
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "'" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "@" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "?" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ":" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "~" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "#" tail acc currentType cols paramsIn paramsOut
 
 -- End of string: flush final word
 else instance
@@ -850,6 +886,22 @@ else instance FlushWhereWord "FALSE" currentType cols paramsIn currentType param
 else instance FlushWhereWord "BETWEEN" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "ANY" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "ALL" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "CAST" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "AS" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "EXISTS" currentType cols paramsIn currentType paramsIn
+-- Postgres type names (for ::type casts)
+else instance FlushWhereWord "text" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "integer" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "bigint" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "boolean" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "jsonb" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "json" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "timestamptz" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "timestamp" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "date" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "int" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "varchar" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "uuid" currentType cols paramsIn currentType paramsIn
 
 -- Non-keyword: check first char
 else instance

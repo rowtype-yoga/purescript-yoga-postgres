@@ -3,11 +3,14 @@ module Test.Postgres.Schema where
 import Prelude
 
 import Data.Array as Array
+import Data.DateTime (DateTime)
 import Data.Maybe (Maybe(..))
 import Data.String (contains, Pattern(..))
 import Data.Tuple.Nested (type (/\))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Foreign (Foreign)
+import JS.BigInt (BigInt)
 import Prim.Boolean (True)
 import Test.Spec (Spec, around, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
@@ -70,6 +73,37 @@ configDDL = createTableDDL @ConfigTable
 
 configInsertSQL :: String
 configInsertSQL = insertSQLFor @ConfigTable
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Extended types: DateTime, BigInt, Jsonb, Array
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type EventsTable = Table "events"
+  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
+  , title :: Column String None
+  , metadata :: Column Jsonb None
+  , tags :: Column (Array String) None
+  , created_at :: Column DateTime None
+  , view_count :: Column BigInt None
+  )
+
+eventsTable :: Proxy EventsTable
+eventsTable = Proxy
+
+eventsDDL :: String
+eventsDDL = createTableDDL @EventsTable
+
+typedJsonbWhere
+  :: Q "events" _ _ (metadata :: Jsonb) _
+typedJsonbWhere = from eventsTable # selectAll # where_ @"metadata @> $metadata"
+
+typedTitleLike
+  :: Q "events" _ _ (title :: String) _
+typedTitleLike = from eventsTable # selectAll # where_ @"title LIKE $title"
+
+typedArrayWhere
+  :: Q "events" _ _ (id :: Array Int) _
+typedArrayWhere = from eventsTable # selectAll # where_ @"id IN $id"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 6: Type-safe UPDATE
@@ -287,6 +321,14 @@ spec = do
         ddl `shouldSatisfy` contains (Pattern "name TEXT NOT NULL")
         ddl `shouldSatisfy` contains (Pattern "email TEXT NOT NULL UNIQUE")
         ddl `shouldSatisfy` contains (Pattern "age INTEGER,")
+
+    describe "Extended types DDL" do
+      it "generates DDL with JSONB, TIMESTAMPTZ, BIGINT, arrays" do
+        eventsDDL `shouldSatisfy` contains (Pattern "CREATE TABLE events")
+        eventsDDL `shouldSatisfy` contains (Pattern "metadata JSONB NOT NULL")
+        eventsDDL `shouldSatisfy` contains (Pattern "tags TEXT[] NOT NULL")
+        eventsDDL `shouldSatisfy` contains (Pattern "created_at TIMESTAMPTZ NOT NULL")
+        eventsDDL `shouldSatisfy` contains (Pattern "view_count BIGINT NOT NULL")
 
     describe "INSERT SQL" do
       it "generates INSERT skipping AutoIncrement columns" do
