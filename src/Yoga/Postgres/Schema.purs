@@ -1770,10 +1770,16 @@ instance Row.Cons label Unit rest row => HasClause label row
 class HasAnyDML :: Row Type -> Constraint
 class HasAnyDML stage
 
-instance Row.Cons "select" Unit rest stage => HasAnyDML stage
-else instance Row.Cons "set" Unit rest stage => HasAnyDML stage
-else instance Row.Cons "delete" Unit rest stage => HasAnyDML stage
-else instance Fail (Text "WHERE requires a preceding SELECT, UPDATE (set), or DELETE") => HasAnyDML stage
+instance (RL.RowToList stage rl, HasAnyDMLRL rl) => HasAnyDML stage
+
+class HasAnyDMLRL :: RL.RowList Type -> Constraint
+class HasAnyDMLRL rl
+
+instance HasAnyDMLRL (RL.Cons "select" Unit rest)
+else instance HasAnyDMLRL (RL.Cons "set" Unit rest)
+else instance HasAnyDMLRL (RL.Cons "delete" Unit rest)
+else instance HasAnyDMLRL rest => HasAnyDMLRL (RL.Cons label typ rest)
+else instance Fail (Text "WHERE requires a preceding SELECT, UPDATE (set), or DELETE") => HasAnyDMLRL RL.Nil
 
 toSQL :: forall tables result params stage. Q tables result params stage -> String
 toSQL (Q q) = q.sql

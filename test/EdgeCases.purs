@@ -42,13 +42,9 @@ havingMergesWhereParams = from usersTable
   # having @"COUNT(*) > $minCount"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- EDGE CASE 2: WHERE without any DML operation
--- from table # where_ compiles, producing invalid SQL like
--- "users WHERE id = $id" (missing SELECT/DELETE/UPDATE)
+-- EDGE CASE 2: WHERE without any DML operation (FIXED)
+-- from table # where_ now fails to compile (see WhereWithoutDML.purs)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-whereWithoutOperation :: Q _ _ (id :: Int) _
-whereWithoutOperation = from usersTable # where_ @"id = $id"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 3: GROUP BY doesn't enforce aggregation rules
