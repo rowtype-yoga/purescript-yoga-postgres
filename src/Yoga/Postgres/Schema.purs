@@ -602,6 +602,16 @@ else instance
   ) =>
   ParseSelectGo " " tail acc tables accRL outRL
 
+-- Open paren: aggregate function call
+else instance
+  ( ExtractUntilParen tail args afterParen
+  , ResolveAggregateArg args tables argType
+  , AggregateReturnType acc argType returnType
+  , SkipSpaces afterParen rest
+  , ParseAfterAggregate rest tables returnType accRL outRL
+  ) =>
+  ParseSelectGo "(" tail acc tables accRL outRL
+
 -- End of string: emit final column
 else instance
   ( Symbol.Append acc h acc'
@@ -705,6 +715,129 @@ else instance
   ParseSelectContinue sym tables accRL outRL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Aggregate functions in SELECT: COUNT(*), SUM(col), etc.
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+-- Extract characters until closing paren
+class ExtractUntilParen :: Symbol -> Symbol -> Symbol -> Constraint
+class ExtractUntilParen tail args afterParen | tail -> args afterParen
+
+instance
+  Fail (Text "Unclosed parenthesis in SELECT clause") =>
+  ExtractUntilParen "" args afterParen
+
+else instance
+  ( Symbol.Cons h t tail
+  , ExtractUntilParenGo h t "" args afterParen
+  ) =>
+  ExtractUntilParen tail args afterParen
+
+class ExtractUntilParenGo :: Symbol -> Symbol -> Symbol -> Symbol -> Symbol -> Constraint
+class ExtractUntilParenGo head tail acc args afterParen | head tail acc -> args afterParen
+
+instance ExtractUntilParenGo ")" tail acc acc tail
+
+else instance
+  Fail (Text "Unclosed parenthesis in SELECT clause") =>
+  ExtractUntilParenGo h "" acc args afterParen
+
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ExtractUntilParenGo nextH nextT acc' args afterParen
+  ) =>
+  ExtractUntilParenGo h tail acc args afterParen
+
+-- Resolve aggregate argument: "*" -> Star, column ref -> unwrapped type
+data Star
+
+class ResolveAggregateArg :: Symbol -> Row (Row Type) -> Type -> Constraint
+class ResolveAggregateArg args tables argType | args tables -> argType
+
+instance ResolveAggregateArg "*" tables Star
+else instance
+  ( ResolveColumn col tables (Column typ constraints)
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  ResolveAggregateArg col tables unwrapped
+
+-- Map (funcName, argType) -> returnType
+class AggregateReturnType :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnType funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnType "COUNT" argType Int
+else instance AggregateReturnType "count" argType Int
+else instance AggregateReturnType "SUM" argType argType
+else instance AggregateReturnType "sum" argType argType
+else instance AggregateReturnType "AVG" argType Number
+else instance AggregateReturnType "avg" argType Number
+else instance AggregateReturnType "MIN" argType argType
+else instance AggregateReturnType "min" argType argType
+else instance AggregateReturnType "MAX" argType argType
+else instance AggregateReturnType "max" argType argType
+else instance AggregateReturnType "ARRAY_AGG" argType (Array argType)
+else instance AggregateReturnType "array_agg" argType (Array argType)
+else instance AggregateReturnType "STRING_AGG" argType String
+else instance AggregateReturnType "string_agg" argType String
+else instance AggregateReturnType "COALESCE" argType argType
+else instance AggregateReturnType "coalesce" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnType funcName argType returnType
+
+-- After aggregate ): require AS alias, then continue
+class ParseAfterAggregate :: Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseAfterAggregate rest tables returnType accRL outRL | rest tables returnType accRL -> outRL
+
+-- End of string without alias
+instance
+  Fail (Text "Aggregate function requires AS alias (e.g. COUNT(*) AS cnt)") =>
+  ParseAfterAggregate "" tables returnType accRL outRL
+
+else instance
+  ( Symbol.Cons h t rest
+  , ParseAfterAggregateByHead h t tables returnType accRL outRL
+  ) =>
+  ParseAfterAggregate rest tables returnType accRL outRL
+
+class ParseAfterAggregateByHead :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseAfterAggregateByHead head tail tables returnType accRL outRL | head tail tables returnType accRL -> outRL
+
+-- Comma without alias
+instance
+  Fail (Text "Aggregate function requires AS alias (e.g. COUNT(*) AS cnt)") =>
+  ParseAfterAggregateByHead "," tail tables returnType accRL outRL
+
+-- Otherwise: expect "AS alias"
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest keyword afterKeyword
+  , ParseAggregateAS keyword afterKeyword tables returnType accRL outRL
+  ) =>
+  ParseAfterAggregateByHead h t tables returnType accRL outRL
+
+class ParseAggregateAS :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseAggregateAS keyword afterKeyword tables returnType accRL outRL | keyword afterKeyword tables returnType accRL -> outRL
+
+instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , SkipSpaces afterAlias rest
+  , ParseSelectExpectEnd rest tables (RL.Cons alias returnType accRL) outRL
+  ) =>
+  ParseAggregateAS "AS" afterKeyword tables returnType accRL outRL
+
+else instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , SkipSpaces afterAlias rest
+  , ParseSelectExpectEnd rest tables (RL.Cons alias returnType accRL) outRL
+  ) =>
+  ParseAggregateAS "as" afterKeyword tables returnType accRL outRL
+
+else instance
+  Fail (Text "Aggregate function requires AS alias (e.g. COUNT(*) AS cnt)") =>
+  ParseAggregateAS keyword afterKeyword tables returnType accRL outRL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ParseWhere: parse "id = $id AND age > $age" -> params
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -792,6 +925,15 @@ else instance FlushWhereWord "ALL" currentType tables paramsIn (Array currentTyp
 else instance FlushWhereWord "CAST" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "AS" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "EXISTS" currentType tables paramsIn currentType paramsIn
+-- Aggregate functions (for HAVING support)
+else instance FlushWhereWord "COUNT" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWord "SUM" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "AVG" currentType tables paramsIn Number paramsIn
+else instance FlushWhereWord "MIN" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "MAX" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "ARRAY_AGG" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "STRING_AGG" currentType tables paramsIn String paramsIn
+else instance FlushWhereWord "*" currentType tables paramsIn currentType paramsIn
 -- Postgres type names (for ::type casts)
 else instance FlushWhereWord "text" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "integer" currentType tables paramsIn currentType paramsIn
@@ -839,6 +981,51 @@ else instance
   , UnwrapMaybe typ unwrapped
   ) =>
   FlushWhereWordByHead head word currentType tables paramsIn unwrapped paramsIn
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ValidateColumnList: comma-separated column references
+-- Used by GROUP BY, DISTINCT ON, ON CONFLICT target
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ValidateColumnList :: Symbol -> Row (Row Type) -> Constraint
+class ValidateColumnList sym tables
+
+instance ValidateColumnList "" tables
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateColumnListGo h t "" tables
+  ) =>
+  ValidateColumnList sym tables
+
+class ValidateColumnListGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidateColumnListGo head tail acc tables
+
+instance
+  ( ResolveColumn acc tables typ
+  , SkipSpaces tail rest
+  , ValidateColumnList rest tables
+  ) =>
+  ValidateColumnListGo "," tail acc tables
+
+else instance
+  ( SkipSpaces tail rest
+  , ResolveColumn acc tables typ
+  , ValidateColumnList rest tables
+  ) =>
+  ValidateColumnListGo " " tail acc tables
+
+else instance
+  ( Symbol.Append acc h acc'
+  , ResolveColumn acc' tables typ
+  ) =>
+  ValidateColumnListGo h "" acc tables
+
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateColumnListGo nextH nextT acc' tables
+  ) =>
+  ValidateColumnListGo h tail acc tables
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ValidateOrderBy: validate ORDER BY with qualified column support
@@ -1439,12 +1626,50 @@ select
   -> Q tables result p stage'
 select (Q q) = Q (q { sql = "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
 
+selectDistinct
+  :: forall @sel tables result r p stage stage'
+   . IsSymbol sel
+  => ParseSelect sel tables result
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q tables r p stage
+  -> Q tables result p stage'
+selectDistinct (Q q) = Q (q { sql = "SELECT DISTINCT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
+
+selectDistinctOn
+  :: forall @on @sel tables result r p stage stage'
+   . IsSymbol on
+  => IsSymbol sel
+  => ValidateColumnList on tables
+  => ParseSelect sel tables result
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q tables r p stage
+  -> Q tables result p stage'
+selectDistinctOn (Q q) = Q (q { sql = "SELECT DISTINCT ON (" <> reflectSymbol (Proxy :: Proxy on) <> ") " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
+
 where_
   :: forall @whr tables result params p stage stage'
    . IsSymbol whr
   => ParseWhere whr tables params
   => Row.Lacks "where" stage
   => Row.Lacks "insert" stage
+  => Row.Lacks "groupBy" stage
+  => Row.Lacks "having" stage
   => Row.Lacks "orderBy" stage
   => Row.Lacks "limit" stage
   => Row.Lacks "offset" stage
@@ -1465,6 +1690,35 @@ orderBy
   => Q tables result params stage
   -> Q tables result params stage'
 orderBy (Q q) = Q (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
+
+groupBy
+  :: forall @cols tables result params stage stage'
+   . IsSymbol cols
+  => ValidateColumnList cols tables
+  => HasClause "select" stage
+  => Row.Lacks "groupBy" stage
+  => Row.Lacks "having" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "groupBy" Unit stage stage'
+  => Q tables result params stage
+  -> Q tables result params stage'
+groupBy (Q q) = Q (q { sql = q.sql <> " GROUP BY " <> reflectSymbol (Proxy :: Proxy cols) })
+
+having
+  :: forall @cond tables result params params' stage stage'
+   . IsSymbol cond
+  => ParseWhere cond tables params'
+  => HasClause "groupBy" stage
+  => Row.Lacks "having" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "having" Unit stage stage'
+  => Q tables result params stage
+  -> Q tables result params' stage'
+having (Q q) = Q (q { sql = q.sql <> " HAVING " <> reflectSymbol (Proxy :: Proxy cond) })
 
 limit
   :: forall tables result params stage stage'

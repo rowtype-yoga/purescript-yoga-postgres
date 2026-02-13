@@ -406,6 +406,66 @@ joinQueryExecution conn =
     # runQuery conn { age: 25 }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- DISTINCT
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedDistinct
+  :: Q _ (name :: String) () _
+typedDistinct = from usersTable # selectDistinct @"name"
+
+typedDistinctOn
+  :: Q _ (name :: String, email :: String) () _
+typedDistinctOn = from usersTable # selectDistinctOn @"name" @"name, email"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- GROUP BY, HAVING, Aggregates
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedGroupBy
+  :: Q _ (name :: String) () _
+typedGroupBy = from usersTable # select @"name" # groupBy @"name"
+
+typedCountStar
+  :: Q _ (name :: String, cnt :: Int) () _
+typedCountStar = from usersTable
+  # select @"name, COUNT(*) AS cnt"
+  # groupBy @"name"
+
+typedSumAge
+  :: Q _ (name :: String, total :: Int) () _
+typedSumAge = from usersTable
+  # select @"name, SUM(age) AS total"
+  # groupBy @"name"
+
+typedAvgAge
+  :: Q _ (name :: String, avg_age :: Number) () _
+typedAvgAge = from usersTable
+  # select @"name, AVG(age) AS avg_age"
+  # groupBy @"name"
+
+typedMinMax
+  :: Q _ (name :: String, youngest :: Int, oldest :: Int) () _
+typedMinMax = from usersTable
+  # select @"name, MIN(age) AS youngest, MAX(age) AS oldest"
+  # groupBy @"name"
+
+typedHaving
+  :: Q _ (name :: String, cnt :: Int) (minCount :: Int) _
+typedHaving = from usersTable
+  # select @"name, COUNT(*) AS cnt"
+  # groupBy @"name"
+  # having @"COUNT(*) > $minCount"
+
+typedFullAggregate
+  :: Q _ (name :: String, cnt :: Int) (min :: Int) _
+typedFullAggregate = from usersTable
+  # select @"name, COUNT(*) AS cnt"
+  # groupBy @"name"
+  # having @"COUNT(*) > $min"
+  # orderBy @"name"
+  # limit 10
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -497,6 +557,28 @@ spec = do
         (typedJoinLimitOffset # toSQL) `shouldEqual` "SELECT users.name, posts.title FROM users INNER JOIN posts ON users.id = posts.user_id ORDER BY users.name LIMIT 10 OFFSET 5"
       it "builds multi-way JOIN" do
         (typedMultiJoin # toSQL) `shouldEqual` "SELECT users.name, posts.title, comments.text FROM users INNER JOIN posts ON users.id = posts.user_id INNER JOIN comments ON posts.id = comments.post_id"
+
+    describe "Builder DISTINCT" do
+      it "builds SELECT DISTINCT" do
+        (typedDistinct # toSQL) `shouldEqual` "SELECT DISTINCT name FROM users"
+      it "builds SELECT DISTINCT ON" do
+        (typedDistinctOn # toSQL) `shouldEqual` "SELECT DISTINCT ON (name) name, email FROM users"
+
+    describe "Builder GROUP BY, HAVING, Aggregates" do
+      it "builds GROUP BY" do
+        (typedGroupBy # toSQL) `shouldEqual` "SELECT name FROM users GROUP BY name"
+      it "builds COUNT(*)" do
+        (typedCountStar # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name"
+      it "builds SUM(col)" do
+        (typedSumAge # toSQL) `shouldEqual` "SELECT name, SUM(age) AS total FROM users GROUP BY name"
+      it "builds AVG(col)" do
+        (typedAvgAge # toSQL) `shouldEqual` "SELECT name, AVG(age) AS avg_age FROM users GROUP BY name"
+      it "builds MIN/MAX" do
+        (typedMinMax # toSQL) `shouldEqual` "SELECT name, MIN(age) AS youngest, MAX(age) AS oldest FROM users GROUP BY name"
+      it "builds HAVING" do
+        (typedHaving # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $minCount"
+      it "builds full aggregate chain" do
+        (typedFullAggregate # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $min ORDER BY name LIMIT 10"
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
