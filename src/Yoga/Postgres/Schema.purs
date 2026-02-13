@@ -2,18 +2,30 @@ module Yoga.Postgres.Schema where
 
 import Prelude
 
-import Data.Array (intercalate, mapWithIndex)
-import Data.Maybe (Maybe)
+import Data.Array (intercalate, mapWithIndex, foldl)
+import Data.Maybe (Maybe(..))
+import Unsafe.Coerce (unsafeCoerce)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.String.Regex (regex, replace') as Regex
+import Data.String.Regex (Regex) as Regex
+import Data.String.Regex.Flags (global) as Regex
+import Control.Monad.Except (runExcept)
+import Data.Either (Either(..))
+import Data.Map as Map
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple.Nested (type (/\))
-import Prim.Row (class Cons) as Row
+import Effect.Aff (Aff)
+import Foreign (Foreign, unsafeToForeign)
+import Prim.Row (class Cons, class Lacks) as Row
 import Prim.RowList as RL
 import Prim.RowList (class RowToList)
 import Prim.Symbol (class Cons, class Append) as Symbol
 import Prim.TypeError (class Fail, Beside, Text, Quote)
+import Record (get) as Record
 import Type.Proxy (Proxy(..))
 import Type.RowList (class ListToRow)
+import Yoga.JSON (class ReadForeign, readImpl)
+import Yoga.Postgres as PG
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Core phantom types
@@ -907,3 +919,84 @@ where_ (Q base) = Q (base <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr))
 
 toSQL :: forall name cols result params. Q name cols result params -> String
 toSQL (Q s) = s
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Query execution
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ParamsToArray :: RL.RowList Type -> Row Type -> Constraint
+class ParamsToArray rl row where
+  paramsToArray :: Proxy rl -> { | row } -> Array { name :: String, value :: Foreign }
+
+instance ParamsToArray RL.Nil row where
+  paramsToArray _ _ = []
+
+instance
+  ( IsSymbol name
+  , Row.Cons name typ rest row
+  , Row.Lacks name rest
+  , ParamsToArray tail row
+  ) =>
+  ParamsToArray (RL.Cons name typ tail) row where
+  paramsToArray _ rec =
+    [ { name: reflectSymbol (Proxy :: Proxy name)
+      , value: unsafeToForeign (Record.get (Proxy :: Proxy name) rec)
+      }
+    ]
+      <> paramsToArray (Proxy :: Proxy tail) rec
+
+namedParamRegex :: Regex.Regex
+namedParamRegex = case Regex.regex "\\$[a-zA-Z_][a-zA-Z0-9_]*" Regex.global of
+  Right r -> r
+  Left _ -> unsafeCoerce unit
+
+replaceNamedParams :: Array { name :: String, value :: Foreign } -> String -> { sql :: String, values :: Array PG.PGValue }
+replaceNamedParams entries sql = do
+  let indexed = entries # mapWithIndex \i e -> { idx: i + 1, name: e.name, value: e.value }
+  let replacements = indexed # foldl (\m e -> Map.insert ("$" <> e.name) ("$" <> show e.idx) m) Map.empty
+  let
+    sql' = Regex.replace' namedParamRegex
+      ( \match _ -> case Map.lookup match replacements of
+          Nothing -> match
+          Just v -> v
+      )
+      sql
+  { sql: sql', values: map (\e -> unsafeCoerce e.value) indexed }
+
+runQuery
+  :: forall name cols result params paramsRL
+   . RowToList params paramsRL
+  => ParamsToArray paramsRL params
+  => ReadForeign { | result }
+  => Q name cols result params
+  -> { | params }
+  -> PG.Connection
+  -> Aff (Array { | result })
+runQuery (Q sql) params conn = do
+  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
+  let { sql: sql', values } = replaceNamedParams entries sql
+  result <- PG.query (PG.SQL sql') values conn
+  pure (unsafeDecodeRows result.rows)
+
+runQueryOne
+  :: forall name cols result params paramsRL
+   . RowToList params paramsRL
+  => ParamsToArray paramsRL params
+  => ReadForeign { | result }
+  => Q name cols result params
+  -> { | params }
+  -> PG.Connection
+  -> Aff (Maybe { | result })
+runQueryOne (Q sql) params conn = do
+  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
+  let { sql: sql', values } = replaceNamedParams entries sql
+  result <- PG.queryOne (PG.SQL sql') values conn
+  pure (result <#> unsafeDecodeRow)
+
+unsafeDecodeRows :: forall a. ReadForeign a => Array Foreign -> Array a
+unsafeDecodeRows = map unsafeDecodeRow
+
+unsafeDecodeRow :: forall a. ReadForeign a => Foreign -> a
+unsafeDecodeRow f = case runExcept (readImpl f) of
+  Left _ -> unsafeCoerce unit
+  Right a -> a

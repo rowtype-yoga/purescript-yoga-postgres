@@ -9,6 +9,8 @@ import Prim.Boolean (True)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Type.Proxy (Proxy(..))
+import Effect.Aff (Aff)
+import Yoga.Postgres as PG
 import Yoga.Postgres.Schema
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -143,6 +145,28 @@ builderSelectColsWhere = typedSelectColsWhere # toSQL
 
 builderWhereComplex :: String
 builderWhereComplex = typedWhereComplex # toSQL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Phase 9: Query execution (type annotations prove correctness)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+queryAllUsers :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
+queryAllUsers conn = from usersTable # selectAll # \q -> runQuery q {} conn
+
+queryUsersByAge :: PG.Connection -> Aff (Array { name :: String, email :: String })
+queryUsersByAge conn =
+  from usersTable # select @"name, email" # where_ @"age > $age"
+    # \q -> runQuery q { age: 25 } conn
+
+queryUserById :: PG.Connection -> Aff (Maybe { name :: String, e :: String })
+queryUserById conn =
+  from usersTable # select @"name, email AS e" # where_ @"id = $id"
+    # \q -> runQueryOne q { id: 1 } conn
+
+queryComplexWhere :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
+queryComplexWhere conn =
+  from usersTable # selectAll # where_ @"name = $name AND age > $age"
+    # \q -> runQuery q { name: "Alice", age: 21 } conn
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
