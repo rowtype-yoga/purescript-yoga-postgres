@@ -755,6 +755,7 @@ class ResolveAggregateArg :: Symbol -> Row (Row Type) -> Type -> Constraint
 class ResolveAggregateArg args tables argType | args tables -> argType
 
 instance ResolveAggregateArg "*" tables Star
+else instance ResolveAggregateArg "" tables Star
 else instance
   ( SkipSpaces args trimmedFront
   , ExtractWord trimmedFront col _rest
@@ -767,10 +768,31 @@ class ResolveAggregateArgCol col tables argType | col tables -> argType
 
 instance ResolveAggregateArgCol "*" tables Star
 else instance
+  ( Symbol.Cons h _t col
+  , ResolveAggregateArgColByHead h col tables argType
+  ) =>
+  ResolveAggregateArgCol col tables argType
+
+class ResolveAggregateArgColByHead :: Symbol -> Symbol -> Row (Row Type) -> Type -> Constraint
+class ResolveAggregateArgColByHead head col tables argType | head col tables -> argType
+
+-- Numeric literals: treat as Star (return type determined by function)
+instance ResolveAggregateArgColByHead "0" col tables Star
+else instance ResolveAggregateArgColByHead "1" col tables Star
+else instance ResolveAggregateArgColByHead "2" col tables Star
+else instance ResolveAggregateArgColByHead "3" col tables Star
+else instance ResolveAggregateArgColByHead "4" col tables Star
+else instance ResolveAggregateArgColByHead "5" col tables Star
+else instance ResolveAggregateArgColByHead "6" col tables Star
+else instance ResolveAggregateArgColByHead "7" col tables Star
+else instance ResolveAggregateArgColByHead "8" col tables Star
+else instance ResolveAggregateArgColByHead "9" col tables Star
+-- Column reference
+else instance
   ( ResolveColumn col tables (Column typ constraints)
   , UnwrapMaybe typ unwrapped
   ) =>
-  ResolveAggregateArgCol col tables unwrapped
+  ResolveAggregateArgColByHead head col tables unwrapped
 
 -- Map (funcName, argType) -> returnType
 class AggregateReturnType :: Symbol -> Type -> Type -> Constraint
@@ -792,6 +814,25 @@ else instance AggregateReturnType "STRING_AGG" argType String
 else instance AggregateReturnType "string_agg" argType String
 else instance AggregateReturnType "COALESCE" argType argType
 else instance AggregateReturnType "coalesce" argType argType
+-- Window functions
+else instance AggregateReturnType "ROW_NUMBER" argType Int
+else instance AggregateReturnType "row_number" argType Int
+else instance AggregateReturnType "RANK" argType Int
+else instance AggregateReturnType "rank" argType Int
+else instance AggregateReturnType "DENSE_RANK" argType Int
+else instance AggregateReturnType "dense_rank" argType Int
+else instance AggregateReturnType "NTILE" argType Int
+else instance AggregateReturnType "ntile" argType Int
+else instance AggregateReturnType "LAG" argType argType
+else instance AggregateReturnType "lag" argType argType
+else instance AggregateReturnType "LEAD" argType argType
+else instance AggregateReturnType "lead" argType argType
+else instance AggregateReturnType "FIRST_VALUE" argType argType
+else instance AggregateReturnType "first_value" argType argType
+else instance AggregateReturnType "LAST_VALUE" argType argType
+else instance AggregateReturnType "last_value" argType argType
+else instance AggregateReturnType "NTH_VALUE" argType argType
+else instance AggregateReturnType "nth_value" argType argType
 else instance
   Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
   AggregateReturnType funcName argType returnType
@@ -819,34 +860,77 @@ instance
   Fail (Text "Aggregate function requires AS alias (e.g. COUNT(*) AS cnt)") =>
   ParseAfterAggregateByHead "," tail tables returnType accRL outRL
 
--- Otherwise: expect "AS alias"
+-- Otherwise: extract keyword and dispatch (OVER or AS)
 else instance
   ( Symbol.Append h t rest
   , ExtractWord rest keyword afterKeyword
-  , ParseAggregateAS keyword afterKeyword tables returnType accRL outRL
+  , ParseAfterAggregateKeyword keyword afterKeyword tables returnType accRL outRL
   ) =>
   ParseAfterAggregateByHead h t tables returnType accRL outRL
 
-class ParseAggregateAS :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseAggregateAS keyword afterKeyword tables returnType accRL outRL | keyword afterKeyword tables returnType accRL -> outRL
+class ParseAfterAggregateKeyword :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseAfterAggregateKeyword keyword afterKeyword tables returnType accRL outRL | keyword afterKeyword tables returnType accRL -> outRL
 
+-- OVER: parse the over clause, then continue to AS
 instance
+  ( SkipSpaces afterKeyword rest
+  , ParseOverClause rest tables returnType accRL outRL
+  ) =>
+  ParseAfterAggregateKeyword "OVER" afterKeyword tables returnType accRL outRL
+
+else instance
+  ( SkipSpaces afterKeyword rest
+  , ParseOverClause rest tables returnType accRL outRL
+  ) =>
+  ParseAfterAggregateKeyword "over" afterKeyword tables returnType accRL outRL
+
+-- AS: extract alias
+else instance
   ( ExtractWord afterKeyword alias afterAlias
   , SkipSpaces afterAlias rest
   , ParseSelectExpectEnd rest tables (RL.Cons alias returnType accRL) outRL
   ) =>
-  ParseAggregateAS "AS" afterKeyword tables returnType accRL outRL
+  ParseAfterAggregateKeyword "AS" afterKeyword tables returnType accRL outRL
 
 else instance
   ( ExtractWord afterKeyword alias afterAlias
   , SkipSpaces afterAlias rest
   , ParseSelectExpectEnd rest tables (RL.Cons alias returnType accRL) outRL
   ) =>
-  ParseAggregateAS "as" afterKeyword tables returnType accRL outRL
+  ParseAfterAggregateKeyword "as" afterKeyword tables returnType accRL outRL
 
 else instance
   Fail (Text "Aggregate function requires AS alias (e.g. COUNT(*) AS cnt)") =>
-  ParseAggregateAS keyword afterKeyword tables returnType accRL outRL
+  ParseAfterAggregateKeyword keyword afterKeyword tables returnType accRL outRL
+
+-- Parse OVER (...) clause: expect (, skip until ), then continue to AS alias
+class ParseOverClause :: Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseOverClause rest tables returnType accRL outRL | rest tables returnType accRL -> outRL
+
+instance
+  Fail (Text "Expected ( after OVER") =>
+  ParseOverClause "" tables returnType accRL outRL
+
+else instance
+  ( Symbol.Cons h t rest
+  , ParseOverClauseByHead h t tables returnType accRL outRL
+  ) =>
+  ParseOverClause rest tables returnType accRL outRL
+
+class ParseOverClauseByHead :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseOverClauseByHead head tail tables returnType accRL outRL | head tail tables returnType accRL -> outRL
+
+-- Open paren: extract until close paren, skip content, continue to AS
+instance
+  ( ExtractUntilParen tail _overContent afterParen
+  , SkipSpaces afterParen rest
+  , ParseAfterAggregate rest tables returnType accRL outRL
+  ) =>
+  ParseOverClauseByHead "(" tail tables returnType accRL outRL
+
+else instance
+  Fail (Text "Expected ( after OVER") =>
+  ParseOverClauseByHead h t tables returnType accRL outRL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ParseWhere: parse "id = $id AND age > $age" -> params

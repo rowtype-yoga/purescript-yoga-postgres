@@ -492,6 +492,45 @@ typedLeftJoinAs = from usersTable
   # select @"users.name, u2.email AS other_email"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Window functions
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedRowNumber
+  :: Q _ (name :: String, rn :: Int) () _
+typedRowNumber = from usersTable
+  # select @"name, ROW_NUMBER() OVER (ORDER BY age) AS rn"
+
+typedRank
+  :: Q _ (name :: String, rnk :: Int) () _
+typedRank = from usersTable
+  # select @"name, RANK() OVER (PARTITION BY name ORDER BY age DESC) AS rnk"
+
+typedDenseRank
+  :: Q _ (name :: String, dr :: Int) () _
+typedDenseRank = from usersTable
+  # select @"name, DENSE_RANK() OVER (ORDER BY age) AS dr"
+
+typedLag
+  :: Q _ (name :: String, prev_age :: Int) () _
+typedLag = from usersTable
+  # select @"name, LAG(age) OVER (ORDER BY id) AS prev_age"
+
+typedLead
+  :: Q _ (name :: String, next_age :: Int) () _
+typedLead = from usersTable
+  # select @"name, LEAD(age) OVER (ORDER BY id) AS next_age"
+
+typedFirstValue
+  :: Q _ (name :: String, first_name :: String) () _
+typedFirstValue = from usersTable
+  # select @"name, FIRST_VALUE(name) OVER (ORDER BY age) AS first_name"
+
+typedNtile
+  :: Q _ (name :: String, bucket :: Int) () _
+typedNtile = from usersTable
+  # select @"name, NTILE(4) OVER (ORDER BY age) AS bucket"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -615,6 +654,22 @@ spec = do
         (typedHaving # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $minCount"
       it "builds full aggregate chain" do
         (typedFullAggregate # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $min ORDER BY name LIMIT 10"
+
+    describe "Builder window functions" do
+      it "builds ROW_NUMBER() OVER" do
+        (typedRowNumber # toSQL) `shouldEqual` "SELECT name, ROW_NUMBER() OVER (ORDER BY age) AS rn FROM users"
+      it "builds RANK() OVER with PARTITION BY" do
+        (typedRank # toSQL) `shouldEqual` "SELECT name, RANK() OVER (PARTITION BY name ORDER BY age DESC) AS rnk FROM users"
+      it "builds DENSE_RANK() OVER" do
+        (typedDenseRank # toSQL) `shouldEqual` "SELECT name, DENSE_RANK() OVER (ORDER BY age) AS dr FROM users"
+      it "builds LAG(col) OVER" do
+        (typedLag # toSQL) `shouldEqual` "SELECT name, LAG(age) OVER (ORDER BY id) AS prev_age FROM users"
+      it "builds LEAD(col) OVER" do
+        (typedLead # toSQL) `shouldEqual` "SELECT name, LEAD(age) OVER (ORDER BY id) AS next_age FROM users"
+      it "builds FIRST_VALUE(col) OVER" do
+        (typedFirstValue # toSQL) `shouldEqual` "SELECT name, FIRST_VALUE(name) OVER (ORDER BY age) AS first_name FROM users"
+      it "builds NTILE(n) OVER" do
+        (typedNtile # toSQL) `shouldEqual` "SELECT name, NTILE(4) OVER (ORDER BY age) AS bucket FROM users"
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
