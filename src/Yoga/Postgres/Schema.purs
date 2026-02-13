@@ -968,11 +968,11 @@ runQuery
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
-  => Q name cols result params
+  => PG.Connection
   -> { | params }
-  -> PG.Connection
+  -> Q name cols result params
   -> Aff (Array { | result })
-runQuery (Q sql) params conn = do
+runQuery conn params (Q sql) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
   let { sql: sql', values } = replaceNamedParams entries sql
   result <- PG.query (PG.SQL sql') values conn
@@ -983,11 +983,11 @@ runQueryOne
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
-  => Q name cols result params
+  => PG.Connection
   -> { | params }
-  -> PG.Connection
+  -> Q name cols result params
   -> Aff (Maybe { | result })
-runQueryOne (Q sql) params conn = do
+runQueryOne conn params (Q sql) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
   let { sql: sql', values } = replaceNamedParams entries sql
   result <- PG.queryOne (PG.SQL sql') values conn

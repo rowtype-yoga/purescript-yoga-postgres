@@ -2,14 +2,16 @@ module Test.Postgres.Schema where
 
 import Prelude
 
-import Data.Maybe (Maybe)
+import Data.Array as Array
+import Data.Maybe (Maybe(..))
 import Data.String (contains, Pattern(..))
 import Data.Tuple.Nested (type (/\))
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Prim.Boolean (True)
-import Test.Spec (Spec, describe, it)
+import Test.Spec (Spec, around, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Type.Proxy (Proxy(..))
-import Effect.Aff (Aff)
 import Yoga.Postgres as PG
 import Yoga.Postgres.Schema
 
@@ -151,22 +153,22 @@ builderWhereComplex = typedWhereComplex # toSQL
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 queryAllUsers :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
-queryAllUsers conn = from usersTable # selectAll # \q -> runQuery q {} conn
+queryAllUsers conn = from usersTable # selectAll # runQuery conn {}
 
 queryUsersByAge :: PG.Connection -> Aff (Array { name :: String, email :: String })
 queryUsersByAge conn =
-  from usersTable # select @"name, email" # where_ @"age > $age"
-    # \q -> runQuery q { age: 25 } conn
+  from usersTable
+    # select @"name, email"
+    # where_ @"age > $age"
+    # runQuery conn { age: 25 }
 
 queryUserById :: PG.Connection -> Aff (Maybe { name :: String, e :: String })
 queryUserById conn =
-  from usersTable # select @"name, email AS e" # where_ @"id = $id"
-    # \q -> runQueryOne q { id: 1 } conn
+  from usersTable # select @"name, email AS e" # where_ @"id = $id" # runQueryOne conn { id: 1 }
 
 queryComplexWhere :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
 queryComplexWhere conn =
-  from usersTable # selectAll # where_ @"name = $name AND age > $age"
-    # \q -> runQuery q { name: "Alice", age: 21 } conn
+  from usersTable # selectAll # where_ @"name = $name AND age > $age" # runQuery conn { name: "Alice", age: 21 }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -225,3 +227,52 @@ spec = do
         builderSelectAlias `shouldEqual` "SELECT name, email AS e FROM users"
       it "builds complex WHERE" do
         builderWhereComplex `shouldEqual` "SELECT * FROM users WHERE name = $name AND age > $age"
+
+integrationSpec :: PG.Connection -> Spec Unit
+integrationSpec conn = do
+  describe "Builder query execution" do
+    it "selectAll returns all rows" do
+      rows <- from usersTable # selectAll # runQuery conn {}
+      Array.length rows `shouldEqual` 2
+      let names = map _.name rows
+      names `shouldSatisfy` Array.elem "Alice"
+      names `shouldSatisfy` Array.elem "Bob"
+
+    it "select with columns returns projected rows" do
+      rows <- from usersTable
+        # select @"name, email"
+        # where_ @"age > $age"
+        # runQuery conn { age: 25 }
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Bob" ]
+
+    it "select with alias" do
+      rows <- from usersTable
+        # select @"name, email AS e"
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 2
+      (map _.e rows) `shouldSatisfy` Array.elem "alice@example.com"
+
+    it "runQueryOne returns Just for match" do
+      result <- from usersTable
+        # select @"name, email"
+        # where_ @"name = $name"
+        # runQueryOne conn { name: "Alice" }
+      case result of
+        Just r -> r.email `shouldEqual` "alice@example.com"
+        Nothing -> shouldEqual "found" "nothing"
+
+    it "runQueryOne returns Nothing for no match" do
+      result <- from usersTable
+        # selectAll
+        # where_ @"name = $name"
+        # runQueryOne conn { name: "Nobody" }
+      result `shouldEqual` Nothing
+
+    it "complex where with multiple params" do
+      rows <- from usersTable
+        # selectAll
+        # where_ @"name = $name AND age > $age"
+        # runQuery conn { name: "Bob", age: 20 }
+      Array.length rows `shouldEqual` 1
+      (map _.age rows) `shouldEqual` [ Just 30 ]
