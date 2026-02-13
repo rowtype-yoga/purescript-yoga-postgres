@@ -2,14 +2,17 @@ module Yoga.Postgres.Schema where
 
 import Prelude
 
-import Data.Array (intercalate, mapWithIndex)
+import Data.Array (intercalate, mapWithIndex, filter)
+import Data.String as String
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple.Nested (type (/\))
+import Prim.Row (class Cons) as Row
 import Prim.RowList as RL
 import Prim.RowList (class RowToList)
 import Prim.Symbol (class Cons, class Append) as Symbol
+import Prim.TypeError (class Fail, Beside, Text, Quote)
 import Type.Proxy (Proxy(..))
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -315,6 +318,111 @@ instance
 -- Builder-style query API
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+-- Type-level column name validation
+-- Validates that every comma-separated name in a Symbol exists in the table's row
+
+class ValidateColumns :: Symbol -> Row Type -> Constraint
+class ValidateColumns sym cols
+
+class ValidateColumnsGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
+class ValidateColumnsGo head tail acc cols
+
+-- Empty string: nothing to validate
+instance ValidateColumns "" cols
+
+-- Non-empty: start character-by-character walk
+else instance
+  ( Symbol.Cons head tail sym
+  , ValidateColumnsGo head tail "" cols
+  ) =>
+  ValidateColumns sym cols
+
+-- Hit a comma: validate accumulated name, skip to next
+instance
+  ( ValidateColumn acc cols
+  , SkipSpaces tail rest
+  , ValidateColumns rest cols
+  ) =>
+  ValidateColumnsGo "," tail acc cols
+
+-- Hit a space: validate accumulated name, skip spaces then expect comma or end
+else instance
+  ( SkipSpaces tail rest
+  , ValidateAfterSpace acc rest cols
+  ) =>
+  ValidateColumnsGo " " tail acc cols
+
+-- End of string (no more chars): validate final accumulated name
+else instance
+  ( Symbol.Append acc h acc'
+  , ValidateColumn acc' cols
+  ) =>
+  ValidateColumnsGo h "" acc cols
+
+-- Regular character: append to accumulator, continue
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateColumnsGo nextH nextT acc' cols
+  ) =>
+  ValidateColumnsGo h tail acc cols
+
+-- After a space inside a name: either comma (end of name) or more text
+class ValidateAfterSpace :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateAfterSpace acc rest cols
+
+-- Rest is empty: validate the accumulated name
+instance ValidateColumn acc cols => ValidateAfterSpace acc "" cols
+
+-- Rest starts with comma: validate name, continue parsing
+else instance
+  ( ValidateColumn acc cols
+  , Symbol.Cons "," tail rest
+  , SkipSpaces tail rest'
+  , ValidateColumns rest' cols
+  ) =>
+  ValidateAfterSpace acc rest cols
+
+-- Skip leading spaces
+class SkipSpaces :: Symbol -> Symbol -> Constraint
+class SkipSpaces sym result | sym -> result
+
+instance SkipSpaces "" ""
+else instance
+  ( Symbol.Cons head tail sym
+  , SkipSpacesGo head tail result
+  ) =>
+  SkipSpaces sym result
+
+class SkipSpacesGo :: Symbol -> Symbol -> Symbol -> Constraint
+class SkipSpacesGo head tail result | head tail -> result
+
+instance SkipSpaces tail result => SkipSpacesGo " " tail result
+else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
+
+-- Validate a single column name exists in the row
+class ValidateColumn :: Symbol -> Row Type -> Constraint
+class ValidateColumn name cols
+
+instance
+  ( Row.Cons name typ rest cols
+  ) =>
+  ValidateColumn name cols
+
+else instance
+  ( Fail (Beside (Beside (Text "Column ") (Quote name)) (Text " does not exist in the table"))
+  ) =>
+  ValidateColumn name cols
+
+-- Reflect a comma-separated Symbol to Array String at value level
+splitColumns :: forall sym. IsSymbol sym => Proxy sym -> Array String
+splitColumns _ = reflectSymbol (Proxy :: Proxy sym)
+  # String.split (String.Pattern ",")
+  # map String.trim
+  # filter (_ /= "")
+
+-- Query builder
+
 newtype Q :: Symbol -> Row Type -> Type
 newtype Q name cols = Q String
 
@@ -328,17 +436,21 @@ select
   :: forall @sel name cols
    . IsSymbol name
   => IsSymbol sel
+  => ValidateColumns sel cols
   => Q name cols
   -> Q name cols
 select _ = Q ("SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> reflectSymbol (Proxy :: Proxy name))
 
 where_
-  :: forall @whr whrRL name cols
-   . RowToList whr whrRL
-  => WhereClauseRL whrRL
+  :: forall @whr name cols
+   . IsSymbol whr
+  => ValidateColumns whr cols
   => Q name cols
   -> Q name cols
-where_ (Q base) = Q (base <> " WHERE " <> intercalate " AND " (whereClauseRL (Proxy :: Proxy whrRL) 1))
+where_ (Q base) = do
+  let cols = splitColumns (Proxy :: Proxy whr)
+  let conditions = cols # mapWithIndex \i col -> col <> " = $" <> show (i + 1)
+  Q (base <> " WHERE " <> intercalate " AND " conditions)
 
 toSQL :: forall name cols. Q name cols -> String
 toSQL (Q s) = s

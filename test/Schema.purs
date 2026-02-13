@@ -95,10 +95,10 @@ builderSelectCols :: String
 builderSelectCols = from usersTable # select @"name, email" # toSQL
 
 builderSelectWhere :: String
-builderSelectWhere = from usersTable # selectAll # where_ @(id :: Int) # toSQL
+builderSelectWhere = from usersTable # selectAll # where_ @"id" # toSQL
 
 builderSelectColsWhere :: String
-builderSelectColsWhere = from usersTable # select @"name" # where_ @(age :: Int) # toSQL
+builderSelectColsWhere = from usersTable # select @"name" # where_ @"age" # toSQL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
