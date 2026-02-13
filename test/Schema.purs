@@ -624,11 +624,11 @@ spec = do
   describe "Schema" do
     describe "CREATE TABLE DDL" do
       it "generates correct DDL for UsersTable" do
-        ddl `shouldEqual` "CREATE TABLE users (age INTEGER, email TEXT NOT NULL UNIQUE, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, name TEXT NOT NULL)"
+        ddl `shouldEqual` "CREATE TABLE users (age INTEGER, email TEXT NOT NULL UNIQUE, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name TEXT NOT NULL)"
 
     describe "Extended types DDL" do
       it "generates DDL with JSONB, TIMESTAMPTZ, BIGINT, arrays" do
-        eventsDDL `shouldEqual` "CREATE TABLE events (created_at TIMESTAMPTZ NOT NULL, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, metadata JSONB NOT NULL, tags TEXT[] NOT NULL, title TEXT NOT NULL, view_count BIGINT NOT NULL)"
+        eventsDDL `shouldEqual` "CREATE TABLE events (created_at TIMESTAMPTZ NOT NULL, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, metadata JSONB NOT NULL, tags TEXT[] NOT NULL, title TEXT NOT NULL, view_count BIGINT NOT NULL)"
 
     describe "INSERT SQL" do
       it "generates INSERT skipping AutoIncrement columns" do
@@ -642,7 +642,7 @@ spec = do
 
     describe "Defaults" do
       it "renders DEFAULT in DDL" do
-        configDDL `shouldEqual` "CREATE TABLE config (active BOOLEAN NOT NULL DEFAULT true, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, role TEXT NOT NULL DEFAULT 'user', score INTEGER NOT NULL DEFAULT 0)"
+        configDDL `shouldEqual` "CREATE TABLE config (active BOOLEAN NOT NULL DEFAULT true, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, role TEXT NOT NULL DEFAULT 'user', score INTEGER NOT NULL DEFAULT 0)"
       it "skips Default columns in INSERT" do
         configInsertSQL `shouldEqual` "INSERT INTO config () VALUES () RETURNING *"
 
