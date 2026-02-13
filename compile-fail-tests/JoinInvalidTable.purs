@@ -3,19 +3,19 @@ module Test.CompileFail.JoinInvalidTable where
 
 import Prelude
 import Data.Maybe (Maybe(..))
-import Data.Tuple.Nested (type (/\))
+import Type.Function (type (#))
 import Type.Proxy (Proxy(..))
 import Yoga.Postgres.Schema
 
 type UsersTable = Table "users"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , name :: Column String None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , name :: String
   )
 
 type PostsTable = Table "posts"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , title :: Column String None
-  , user_id :: Column Int None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , title :: String
+  , user_id :: Int
   )
 
 usersTable :: Proxy UsersTable

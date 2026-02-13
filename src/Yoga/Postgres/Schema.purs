@@ -19,7 +19,7 @@ import Control.Monad.Except (runExcept)
 import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Symbol (class IsSymbol, reflectSymbol)
-import Data.Tuple.Nested (type (/\))
+import Type.Function (type (#))
 import Effect.Aff (Aff)
 import Foreign (Foreign, unsafeToForeign)
 import Prim.Boolean (True, False)
@@ -29,7 +29,6 @@ import Prim.RowList (class RowToList)
 import Prim.Symbol (class Cons, class Append) as Symbol
 import Prim.TypeError (class Fail, Beside, Text, Quote)
 import Record (get) as Record
-import Type.Data.Boolean (class Or)
 import Type.Proxy (Proxy(..))
 import Type.RowList (class ListToRow)
 import Yoga.JSON (class ReadForeign, readImpl)
@@ -42,26 +41,37 @@ import Yoga.Postgres as PG
 data Table :: Symbol -> Row Type -> Type
 data Table name columns = Table
 
-data Column :: Type -> Type -> Type
-data Column typ constraints = Column
-
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Constraint phantom types
+-- Constraint wrappers (used with # operator from Type.Function)
+--   Int # PrimaryKey # AutoIncrement = AutoIncrement (PrimaryKey Int)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-data PrimaryKey
-data AutoIncrement
-data Unique
-data None
+data PrimaryKey :: Type -> Type
+data PrimaryKey a
 
-data Default :: Symbol -> Type
-data Default a
+data AutoIncrement :: Type -> Type
+data AutoIncrement a
 
-data DefaultInt :: Int -> Type
-data DefaultInt a
+data Unique :: Type -> Type
+data Unique a
 
-data DefaultBool :: Boolean -> Type
-data DefaultBool a
+data Default :: Symbol -> Type -> Type
+data Default sym a
+
+data DefaultInt :: Int -> Type -> Type
+data DefaultInt val a
+
+data DefaultBool :: Boolean -> Type -> Type
+data DefaultBool val a
+
+data References
+
+data ForeignKey :: Symbol -> Type -> Symbol -> Type -> Type
+data ForeignKey table references col a
+
+-- Internal: used by LEFT JOIN to mark columns as nullable
+data Nullable :: Type -> Type
+data Nullable a
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- JSONB type wrapper
@@ -85,6 +95,23 @@ instance IsNullable (Maybe a) where
   isNullable _ = true
 else instance IsNullable a where
   isNullable _ = false
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ExtractType: recursively unwrap constraint wrappers to get base type
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ExtractType :: Type -> Type -> Constraint
+class ExtractType wrapped typ | wrapped -> typ
+
+instance ExtractType a typ => ExtractType (PrimaryKey a) typ
+else instance ExtractType a typ => ExtractType (AutoIncrement a) typ
+else instance ExtractType a typ => ExtractType (Unique a) typ
+else instance ExtractType a typ => ExtractType (Default sym a) typ
+else instance ExtractType a typ => ExtractType (DefaultInt val a) typ
+else instance ExtractType a typ => ExtractType (DefaultBool val a) typ
+else instance ExtractType a typ => ExtractType (ForeignKey t r c a) typ
+else instance ExtractType a typ => ExtractType (Nullable a) (Maybe typ)
+else instance ExtractType a a
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- PureScript type -> Postgres type name
@@ -127,37 +154,42 @@ instance PGTypeName a => PGTypeName (Maybe a) where
 class RenderConstraint a where
   renderConstraint :: Proxy a -> String
 
-instance RenderConstraint PrimaryKey where
-  renderConstraint _ = "PRIMARY KEY"
+instance RenderConstraint a => RenderConstraint (PrimaryKey a) where
+  renderConstraint _ = joinConstraints "PRIMARY KEY" (renderConstraint (Proxy :: Proxy a))
 
-instance RenderConstraint AutoIncrement where
-  renderConstraint _ = "GENERATED ALWAYS AS IDENTITY"
+else instance RenderConstraint a => RenderConstraint (AutoIncrement a) where
+  renderConstraint _ = joinConstraints "GENERATED ALWAYS AS IDENTITY" (renderConstraint (Proxy :: Proxy a))
 
-instance RenderConstraint Unique where
-  renderConstraint _ = "UNIQUE"
+else instance RenderConstraint a => RenderConstraint (Unique a) where
+  renderConstraint _ = joinConstraints "UNIQUE" (renderConstraint (Proxy :: Proxy a))
 
-instance RenderConstraint None where
+else instance (Reflectable sym String, RenderConstraint a) => RenderConstraint (Default sym a) where
+  renderConstraint _ = joinConstraints ("DEFAULT '" <> reflectType (Proxy :: Proxy sym) <> "'") (renderConstraint (Proxy :: Proxy a))
+
+else instance (Reflectable val Int, RenderConstraint a) => RenderConstraint (DefaultInt val a) where
+  renderConstraint _ = joinConstraints ("DEFAULT " <> show (reflectType (Proxy :: Proxy val))) (renderConstraint (Proxy :: Proxy a))
+
+else instance (Reflectable val Boolean, RenderConstraint a) => RenderConstraint (DefaultBool val a) where
+  renderConstraint _ = joinConstraints
+    (if reflectType (Proxy :: Proxy val) then "DEFAULT true" else "DEFAULT false")
+    (renderConstraint (Proxy :: Proxy a))
+
+else instance (IsSymbol table, IsSymbol col, RenderConstraint a) => RenderConstraint (ForeignKey table References col a) where
+  renderConstraint _ = joinConstraints
+    ("REFERENCES " <> reflectSymbol (Proxy :: Proxy table) <> "(" <> reflectSymbol (Proxy :: Proxy col) <> ")")
+    (renderConstraint (Proxy :: Proxy a))
+
+else instance RenderConstraint a => RenderConstraint (Nullable a) where
+  renderConstraint _ = renderConstraint (Proxy :: Proxy a)
+
+else instance RenderConstraint a where
   renderConstraint _ = ""
 
-instance Reflectable sym String => RenderConstraint (Default sym) where
-  renderConstraint _ = "DEFAULT " <> reflectType (Proxy :: Proxy sym)
-
-instance Reflectable val Int => RenderConstraint (DefaultInt val) where
-  renderConstraint _ = "DEFAULT " <> show (reflectType (Proxy :: Proxy val))
-
-instance Reflectable val Boolean => RenderConstraint (DefaultBool val) where
-  renderConstraint _ =
-    if reflectType (Proxy :: Proxy val) then "DEFAULT true"
-    else "DEFAULT false"
-
-instance (RenderConstraint a, RenderConstraint b) => RenderConstraint (a /\ b) where
-  renderConstraint _ = do
-    let a = renderConstraint (Proxy :: Proxy a)
-    let b = renderConstraint (Proxy :: Proxy b)
-    case a, b of
-      "", s -> s
-      s, "" -> s
-      s1, s2 -> s1 <> " " <> s2
+joinConstraints :: String -> String -> String
+joinConstraints a b = case a, b of
+  "", s -> s
+  s, "" -> s
+  s1, s2 -> s1 <> " " <> s2
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- DDL generation
@@ -175,18 +207,19 @@ instance RenderColumnsRL RL.Nil where
 
 instance
   ( IsSymbol name
+  , ExtractType entry typ
   , PGTypeName typ
   , IsNullable typ
-  , RenderConstraint constraints
+  , RenderConstraint entry
   , RenderColumnsRL tail
   ) =>
-  RenderColumnsRL (RL.Cons name (Column typ constraints) tail) where
+  RenderColumnsRL (RL.Cons name entry tail) where
   renderColumnsRL _ = do
     let colName = reflectSymbol (Proxy :: Proxy name)
     let colType = pgTypeName (Proxy :: Proxy typ)
     let nullable = isNullable (Proxy :: Proxy typ)
     let notNull = if nullable then "" else " NOT NULL"
-    let constraints = renderConstraint (Proxy :: Proxy constraints)
+    let constraints = renderConstraint (Proxy :: Proxy entry)
     let constraintsSuffix = if constraints == "" then "" else " " <> constraints
     [ colName <> " " <> colType <> notNull <> constraintsSuffix ] <> renderColumnsRL (Proxy :: Proxy tail)
 
@@ -208,16 +241,22 @@ instance
 class IsAutoGenerated a where
   isAutoGenerated :: Proxy a -> Boolean
 
-instance IsAutoGenerated AutoIncrement where
+instance IsAutoGenerated (AutoIncrement a) where
   isAutoGenerated _ = true
-else instance IsAutoGenerated (Default a) where
+else instance IsAutoGenerated (Default s a) where
   isAutoGenerated _ = true
-else instance IsAutoGenerated (DefaultInt a) where
+else instance IsAutoGenerated (DefaultInt v a) where
   isAutoGenerated _ = true
-else instance IsAutoGenerated (DefaultBool a) where
+else instance IsAutoGenerated (DefaultBool v a) where
   isAutoGenerated _ = true
-else instance (IsAutoGenerated a, IsAutoGenerated b) => IsAutoGenerated (a /\ b) where
-  isAutoGenerated _ = isAutoGenerated (Proxy :: Proxy a) || isAutoGenerated (Proxy :: Proxy b)
+else instance IsAutoGenerated a => IsAutoGenerated (PrimaryKey a) where
+  isAutoGenerated _ = isAutoGenerated (Proxy :: Proxy a)
+else instance IsAutoGenerated a => IsAutoGenerated (Unique a) where
+  isAutoGenerated _ = isAutoGenerated (Proxy :: Proxy a)
+else instance IsAutoGenerated a => IsAutoGenerated (ForeignKey t r c a) where
+  isAutoGenerated _ = isAutoGenerated (Proxy :: Proxy a)
+else instance IsAutoGenerated a => IsAutoGenerated (Nullable a) where
+  isAutoGenerated _ = isAutoGenerated (Proxy :: Proxy a)
 else instance IsAutoGenerated a where
   isAutoGenerated _ = false
 
@@ -230,15 +269,15 @@ instance InsertColumnsRL RL.Nil where
 
 instance
   ( IsSymbol name
-  , IsAutoGenerated constraints
+  , IsAutoGenerated entry
   , InsertColumnsRL tail
   ) =>
-  InsertColumnsRL (RL.Cons name (Column typ constraints) tail) where
+  InsertColumnsRL (RL.Cons name entry tail) where
   insertColumnsRL _ =
     let
       rest = insertColumnsRL (Proxy :: Proxy tail)
     in
-      if isAutoGenerated (Proxy :: Proxy constraints) then rest
+      if isAutoGenerated (Proxy :: Proxy entry) then rest
       else [ reflectSymbol (Proxy :: Proxy name) ] <> rest
 
 class InsertSQLFor a where
@@ -412,12 +451,12 @@ else instance
   ) =>
   ExtractWordGo h tail acc word rest
 
--- StripColumns: (name :: Column String None, ...) -> (name :: String, ...)
+-- StripColumns: (name :: String # Unique, ...) -> (name :: String, ...)
 class StripColumnsRL :: RL.RowList Type -> RL.RowList Type -> Constraint
 class StripColumnsRL rl out | rl -> out
 
 instance StripColumnsRL RL.Nil RL.Nil
-instance StripColumnsRL tail out' => StripColumnsRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name typ out')
+instance (ExtractType entry typ, StripColumnsRL tail out') => StripColumnsRL (RL.Cons name entry tail) (RL.Cons name typ out')
 
 class StripColumns :: Row Type -> Row Type -> Constraint
 class StripColumns cols result | cols -> result
@@ -588,7 +627,8 @@ instance
 
 -- Comma: emit column, continue
 else instance
-  ( ResolveColumn acc tables (Column typ constraints)
+  ( ResolveColumn acc tables entry
+  , ExtractType entry typ
   , SplitOnDot acc _hasDot _table colName
   , SkipSpaces tail rest
   , ParseSelectContinue rest tables (RL.Cons colName typ accRL) outRL
@@ -615,7 +655,8 @@ else instance
 -- End of string: emit final column
 else instance
   ( Symbol.Append acc h acc'
-  , ResolveColumn acc' tables (Column typ constraints)
+  , ResolveColumn acc' tables entry
+  , ExtractType entry typ
   , SplitOnDot acc' _hasDot _table colName
   ) =>
   ParseSelectGo h "" acc tables accRL (RL.Cons colName typ accRL)
@@ -634,7 +675,8 @@ class ParseSelectAfterCol colRef rest tables accRL outRL | colRef rest tables ac
 
 -- End: emit column with default label (column name after dot)
 instance
-  ( ResolveColumn colRef tables (Column typ constraints)
+  ( ResolveColumn colRef tables entry
+  , ExtractType entry typ
   , SplitOnDot colRef _hasDot _table colName
   ) =>
   ParseSelectAfterCol colRef "" tables accRL (RL.Cons colName typ accRL)
@@ -651,7 +693,8 @@ class ParseSelectAfterColByHead head tail colRef tables accRL outRL | head tail 
 
 -- Comma: emit column with default label, continue
 instance
-  ( ResolveColumn colRef tables (Column typ constraints)
+  ( ResolveColumn colRef tables entry
+  , ExtractType entry typ
   , SplitOnDot colRef _hasDot _table colName
   , SkipSpaces tail rest
   , ParseSelectContinue rest tables (RL.Cons colName typ accRL) outRL
@@ -671,7 +714,8 @@ class ParseSelectHandleAS keyword afterKeyword colRef tables accRL outRL | keywo
 
 instance
   ( ExtractWord afterKeyword alias afterAlias
-  , ResolveColumn colRef tables (Column typ constraints)
+  , ResolveColumn colRef tables entry
+  , ExtractType entry typ
   , SkipSpaces afterAlias rest
   , ParseSelectExpectEnd rest tables (RL.Cons alias typ accRL) outRL
   ) =>
@@ -679,7 +723,8 @@ instance
 
 else instance
   ( ExtractWord afterKeyword alias afterAlias
-  , ResolveColumn colRef tables (Column typ constraints)
+  , ResolveColumn colRef tables entry
+  , ExtractType entry typ
   , SkipSpaces afterAlias rest
   , ParseSelectExpectEnd rest tables (RL.Cons alias typ accRL) outRL
   ) =>
@@ -789,7 +834,8 @@ else instance ResolveAggregateArgColByHead "8" col tables Star
 else instance ResolveAggregateArgColByHead "9" col tables Star
 -- Column reference
 else instance
-  ( ResolveColumn col tables (Column typ constraints)
+  ( ResolveColumn col tables entry
+  , ExtractType entry typ
   , UnwrapMaybe typ unwrapped
   ) =>
   ResolveAggregateArgColByHead head col tables unwrapped
@@ -1072,7 +1118,8 @@ else instance FlushWhereWordByHead "9" word currentType tables paramsIn currentT
 
 -- Column reference: resolve and set as currentType
 else instance
-  ( ResolveColumn word tables (Column typ constraints)
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
   , UnwrapMaybe typ unwrapped
   ) =>
   FlushWhereWordByHead head word currentType tables paramsIn unwrapped paramsIn
@@ -1588,11 +1635,14 @@ else instance
 class IsAutoGeneratedTC :: Type -> Boolean -> Constraint
 class IsAutoGeneratedTC constraints result | constraints -> result
 
-instance IsAutoGeneratedTC AutoIncrement True
-else instance IsAutoGeneratedTC (Default a) True
-else instance IsAutoGeneratedTC (DefaultInt a) True
-else instance IsAutoGeneratedTC (DefaultBool a) True
-else instance (IsAutoGeneratedTC a ra, IsAutoGeneratedTC b rb, Or ra rb result) => IsAutoGeneratedTC (a /\ b) result
+instance IsAutoGeneratedTC (AutoIncrement a) True
+else instance IsAutoGeneratedTC (Default s a) True
+else instance IsAutoGeneratedTC (DefaultInt v a) True
+else instance IsAutoGeneratedTC (DefaultBool v a) True
+else instance IsAutoGeneratedTC a result => IsAutoGeneratedTC (PrimaryKey a) result
+else instance IsAutoGeneratedTC a result => IsAutoGeneratedTC (Unique a) result
+else instance IsAutoGeneratedTC a result => IsAutoGeneratedTC (ForeignKey t r c a) result
+else instance IsAutoGeneratedTC a result => IsAutoGeneratedTC (Nullable a) result
 else instance IsAutoGeneratedTC a False
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1604,10 +1654,11 @@ class InsertableColumnsRL tableRL outRL | tableRL -> outRL
 
 instance InsertableColumnsRL RL.Nil RL.Nil
 instance
-  ( IsAutoGeneratedTC constraints isAuto
+  ( IsAutoGeneratedTC entry isAuto
+  , ExtractType entry typ
   , InsertableColumnDecide isAuto name typ tail outRL
   ) =>
-  InsertableColumnsRL (RL.Cons name (Column typ constraints) tail) outRL
+  InsertableColumnsRL (RL.Cons name entry tail) outRL
 
 class InsertableColumnDecide :: Boolean -> Symbol -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
 class InsertableColumnDecide isAuto name typ tail outRL | isAuto name typ tail -> outRL
@@ -1675,8 +1726,19 @@ class MakeNullableRL :: RL.RowList Type -> RL.RowList Type -> Constraint
 class MakeNullableRL rl out | rl -> out
 
 instance MakeNullableRL RL.Nil RL.Nil
-instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column (Maybe a) constraints) tail) (RL.Cons name (Column (Maybe a) constraints) out')
-else instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name (Column (Maybe typ) constraints) out')
+instance
+  ( ExtractType entry typ
+  , MakeNullableDecide typ name entry tail out
+  ) =>
+  MakeNullableRL (RL.Cons name entry tail) out
+
+class MakeNullableDecide :: Type -> Symbol -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class MakeNullableDecide typ name entry tail out | typ name entry tail -> out
+
+-- Already nullable: keep as-is
+instance MakeNullableRL tail out' => MakeNullableDecide (Maybe a) name entry tail (RL.Cons name entry out')
+-- Not nullable: wrap in Nullable
+else instance MakeNullableRL tail out' => MakeNullableDecide typ name entry tail (RL.Cons name (Nullable entry) out')
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Query builder: unified Q type
@@ -1954,7 +2016,8 @@ class ValidateSetColumnsRL rl cols
 
 instance ValidateSetColumnsRL RL.Nil cols
 instance
-  ( Row.Cons name (Column typ constraints) rest cols
+  ( Row.Cons name entry rest cols
+  , ExtractType entry typ
   , ValidateSetColumnsRL tail cols
   ) =>
   ValidateSetColumnsRL (RL.Cons name typ tail) cols

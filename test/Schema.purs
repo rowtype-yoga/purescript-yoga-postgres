@@ -9,7 +9,7 @@ import Data.Maybe (Maybe(..), fromJust)
 import Data.Time (Time(..))
 import Partial.Unsafe (unsafePartial)
 
-import Data.Tuple.Nested (type (/\))
+import Type.Function (type (#))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Foreign (Foreign, unsafeToForeign)
@@ -27,10 +27,10 @@ import Yoga.Postgres.Schema
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type UsersTable = Table "users"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , name :: Column String None
-  , email :: Column String Unique
-  , age :: Column (Maybe Int) None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , name :: String
+  , email :: String # Unique
+  , age :: Maybe Int
   )
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -62,10 +62,10 @@ selectWhereSQL = selectWhereSQLFor @UsersTable @(id :: Int)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type ConfigTable = Table "config"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , active :: Column Boolean (DefaultBool True)
-  , role :: Column String (Default "'user'")
-  , score :: Column Int (DefaultInt 0)
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , active :: Boolean # DefaultBool True
+  , role :: String # Default "user"
+  , score :: Int # DefaultInt 0
   )
 
 configDDL :: String
@@ -79,12 +79,12 @@ configInsertSQL = insertSQLFor @ConfigTable
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type EventsTable = Table "events"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , title :: Column String None
-  , metadata :: Column Jsonb None
-  , tags :: Column (Array String) None
-  , created_at :: Column DateTime None
-  , view_count :: Column BigInt None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , title :: String
+  , metadata :: Jsonb
+  , tags :: Array String
+  , created_at :: DateTime
+  , view_count :: BigInt
   )
 
 eventsTable :: Proxy EventsTable
@@ -323,20 +323,20 @@ queryComplexWhere conn =
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type PostsTable = Table "posts"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , title :: Column String None
-  , body :: Column String None
-  , user_id :: Column Int None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , title :: String
+  , body :: String
+  , user_id :: Int
   )
 
 postsTable :: Proxy PostsTable
 postsTable = Proxy
 
 type CommentsTable = Table "comments"
-  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , text :: Column String None
-  , post_id :: Column Int None
-  , user_id :: Column Int None
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , text :: String
+  , post_id :: Int
+  , user_id :: Int
   )
 
 commentsTable :: Proxy CommentsTable
@@ -1101,9 +1101,9 @@ integrationSpec conn = do
 
     it "UNION with params from both sides" do
       rows <-
-        (from usersTable # select @"name" # where_ @"age > $a")
-          `union` (from usersTable # select @"name" # where_ @"age < $b")
-          # runQuery conn { a: 100, b: 0 }
+        (from usersTable # select @"name" # where_ @"age > $maxAge")
+          # union (from usersTable # select @"name" # where_ @"age < $minAge")
+          # runQuery conn { maxAge: 100, minAge: 18 }
       rows `shouldEqual` []
 
     it "INTERSECT returns common rows" do
