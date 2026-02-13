@@ -1043,14 +1043,14 @@ instance
 
 insert
   :: forall name cols colsRL insertableRL insertable requiredRL required
-       userRow userRowRL stage stage'
+       optionalProvided missing userRow userRowRL stage stage'
    . RowToList cols colsRL
   => InsertableColumnsRL colsRL insertableRL
   => ListToRow insertableRL insertable
   => RequiredColumnsRL insertableRL requiredRL
   => ListToRow requiredRL required
-  => Row.Union required userRow _
-  => Row.Union userRow insertable _
+  => Row.Union required optionalProvided userRow
+  => Row.Union userRow missing insertable
   => RowToList userRow userRowRL
   => ColumnNamesRL userRowRL
   => RecordValuesRL userRowRL userRow

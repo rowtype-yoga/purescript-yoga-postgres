@@ -1,5 +1,5 @@
--- EXPECT: Cons
-module Test.CompileFail.OrderByBeforeSelect where
+-- EXPECT: Expected
+module Test.CompileFail.OnConflictBadExcluded where
 
 import Prelude
 import Data.Maybe (Maybe(..))
@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # orderBy @"name"
+bad = from usersTable # insert { name: "A", email: "a@b.com" } # onConflict @"email" @"DO UPDATE SET name = EXCLUDED.bogus"

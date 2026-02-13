@@ -1,5 +1,5 @@
 -- EXPECT: Cons
-module Test.CompileFail.OrderByBeforeSelect where
+module Test.CompileFail.OrderByOnUpdate where
 
 import Prelude
 import Data.Maybe (Maybe(..))
@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # orderBy @"name"
+bad = from usersTable # set { name: "B" } # orderBy @"name"
