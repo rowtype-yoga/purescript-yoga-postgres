@@ -756,10 +756,21 @@ class ResolveAggregateArg args tables argType | args tables -> argType
 
 instance ResolveAggregateArg "*" tables Star
 else instance
+  ( SkipSpaces args trimmedFront
+  , ExtractWord trimmedFront col _rest
+  , ResolveAggregateArgCol col tables argType
+  ) =>
+  ResolveAggregateArg args tables argType
+
+class ResolveAggregateArgCol :: Symbol -> Row (Row Type) -> Type -> Constraint
+class ResolveAggregateArgCol col tables argType | col tables -> argType
+
+instance ResolveAggregateArgCol "*" tables Star
+else instance
   ( ResolveColumn col tables (Column typ constraints)
   , UnwrapMaybe typ unwrapped
   ) =>
-  ResolveAggregateArg col tables unwrapped
+  ResolveAggregateArgCol col tables unwrapped
 
 -- Map (funcName, argType) -> returnType
 class AggregateReturnType :: Symbol -> Type -> Type -> Constraint
@@ -990,12 +1001,22 @@ else instance
 class ValidateColumnList :: Symbol -> Row (Row Type) -> Constraint
 class ValidateColumnList sym tables
 
-instance ValidateColumnList "" tables
+instance Fail (Text "Empty column list") => ValidateColumnList "" tables
 else instance
   ( Symbol.Cons h t sym
   , ValidateColumnListGo h t "" tables
   ) =>
   ValidateColumnList sym tables
+
+class ValidateColumnListContinue :: Symbol -> Row (Row Type) -> Constraint
+class ValidateColumnListContinue sym tables
+
+instance ValidateColumnListContinue "" tables
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateColumnListGo h t "" tables
+  ) =>
+  ValidateColumnListContinue sym tables
 
 class ValidateColumnListGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
 class ValidateColumnListGo head tail acc tables
@@ -1003,14 +1024,14 @@ class ValidateColumnListGo head tail acc tables
 instance
   ( ResolveColumn acc tables typ
   , SkipSpaces tail rest
-  , ValidateColumnList rest tables
+  , ValidateColumnListContinue rest tables
   ) =>
   ValidateColumnListGo "," tail acc tables
 
 else instance
   ( SkipSpaces tail rest
   , ResolveColumn acc tables typ
-  , ValidateColumnList rest tables
+  , ValidateColumnListContinue rest tables
   ) =>
   ValidateColumnListGo " " tail acc tables
 
