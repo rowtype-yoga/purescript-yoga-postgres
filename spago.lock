@@ -54,6 +54,9 @@
               "yoga-json": ">=5.2.0 <6.0.0"
             },
             {
+              "yoga-om": ">=1.2.2 <2.0.0"
+            },
+            {
               "yoga-sql-types": ">=0.1.0 <0.2.0"
             }
           ]
@@ -750,6 +753,19 @@
         "unsafe-coerce"
       ]
     },
+    "record-studio": {
+      "type": "registry",
+      "version": "1.0.4",
+      "integrity": "sha256-CRnFvSXpDDzio+buibUxFU9zPZDd7/lzrYC1Ya3FuIw=",
+      "dependencies": [
+        "heterogeneous",
+        "lists",
+        "prelude",
+        "record",
+        "typelevel-prelude",
+        "unsafe-coerce"
+      ]
+    },
     "refs": {
       "type": "registry",
       "version": "6.0.0",
@@ -898,6 +914,23 @@
         "type-equality"
       ]
     },
+    "uncurried-transformers": {
+      "type": "registry",
+      "version": "1.1.0",
+      "integrity": "sha256-AqqBMzVLzozVoDorE3QcVVRDkLd7O3624mRHCDnPhaI=",
+      "dependencies": [
+        "control",
+        "effect",
+        "either",
+        "functions",
+        "identity",
+        "prelude",
+        "safe-coerce",
+        "tailrec",
+        "transformers",
+        "tuples"
+      ]
+    },
     "unfoldable": {
       "type": "registry",
       "version": "6.0.0",
@@ -969,6 +1002,35 @@
         "unsafe-coerce",
         "variant",
         "yoga-tree"
+      ]
+    },
+    "yoga-om": {
+      "type": "registry",
+      "version": "1.2.2",
+      "integrity": "sha256-uDV3/o8mUOTIgSEQFqIATPyladzL8BcjURvfS901hgI=",
+      "dependencies": [
+        "aff",
+        "avar",
+        "console",
+        "control",
+        "datetime",
+        "effect",
+        "either",
+        "exceptions",
+        "functions",
+        "maybe",
+        "newtype",
+        "parallel",
+        "prelude",
+        "record",
+        "record-studio",
+        "tailrec",
+        "transformers",
+        "tuples",
+        "typelevel-prelude",
+        "uncurried-transformers",
+        "unsafe-coerce",
+        "variant"
       ]
     },
     "yoga-sql-types": {

@@ -610,6 +610,18 @@ typedIsNotNull
   :: Q _ _ () _
 typedIsNotNull = from usersTable # selectAll # where_ @"age IS NOT NULL"
 
+typedIsNullLowercase
+  :: Q _ _ () _
+typedIsNullLowercase = from usersTable # selectAll # where_ @"age is null"
+
+typedBetweenLowercase
+  :: Q _ _ (lo :: Int, hi :: Int) _
+typedBetweenLowercase = from usersTable # selectAll # where_ @"age between $lo and $hi"
+
+typedLikeLowercase
+  :: Q _ _ (pat :: String) _
+typedLikeLowercase = from usersTable # selectAll # where_ @"name like $pat"
+
 typedNestedParens
   :: Q _ _ (a :: Int, b :: Int, name :: String) _
 typedNestedParens = from usersTable # selectAll
@@ -787,6 +799,12 @@ spec = do
         (typedIsNull # toSQL) `shouldEqual` "SELECT * FROM users WHERE age IS NULL"
       it "builds IS NOT NULL" do
         (typedIsNotNull # toSQL) `shouldEqual` "SELECT * FROM users WHERE age IS NOT NULL"
+      it "builds lowercase is null" do
+        (typedIsNullLowercase # toSQL) `shouldEqual` "SELECT * FROM users WHERE age is null"
+      it "builds lowercase between" do
+        (typedBetweenLowercase # toSQL) `shouldEqual` "SELECT * FROM users WHERE age between $lo and $hi"
+      it "builds lowercase like" do
+        (typedLikeLowercase # toSQL) `shouldEqual` "SELECT * FROM users WHERE name like $pat"
       it "builds nested parentheses" do
         (typedNestedParens # toSQL) `shouldEqual` "SELECT * FROM users WHERE (age > $a OR age < $b) AND name = $name"
 

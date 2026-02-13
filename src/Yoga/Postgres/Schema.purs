@@ -1058,6 +1058,23 @@ else instance FlushWhereWord "ALL" currentType tables paramsIn (Array currentTyp
 else instance FlushWhereWord "CAST" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "AS" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "EXISTS" currentType tables paramsIn currentType paramsIn
+-- Lowercase SQL keywords
+else instance FlushWhereWord "and" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "or" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "not" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "is" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "null" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "like" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "ilike" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "in" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "true" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "false" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "between" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "any" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "all" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "cast" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "as" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "exists" currentType tables paramsIn currentType paramsIn
 -- Aggregate functions (for HAVING support)
 else instance FlushWhereWord "COUNT" currentType tables paramsIn Int paramsIn
 else instance FlushWhereWord "SUM" currentType tables paramsIn currentType paramsIn
@@ -1066,6 +1083,14 @@ else instance FlushWhereWord "MIN" currentType tables paramsIn currentType param
 else instance FlushWhereWord "MAX" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "ARRAY_AGG" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "STRING_AGG" currentType tables paramsIn String paramsIn
+-- Lowercase aggregate functions
+else instance FlushWhereWord "count" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWord "sum" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "avg" currentType tables paramsIn Number paramsIn
+else instance FlushWhereWord "min" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "max" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "array_agg" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "string_agg" currentType tables paramsIn String paramsIn
 else instance FlushWhereWord "*" currentType tables paramsIn currentType paramsIn
 -- Postgres type names (for ::type casts)
 else instance FlushWhereWord "text" currentType tables paramsIn currentType paramsIn

@@ -82,13 +82,23 @@ overClauseNotValidated = from usersTable
 -- "IS NULL" works but "is null" would fail (tries to resolve "is" as column)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- This works:
 uppercaseIsNull :: Q _ _ () _
 uppercaseIsNull = from usersTable # selectAll # where_ @"age IS NULL"
 
--- This would FAIL to compile (uncomment to verify):
--- lowercaseIsNull :: Q _ _ () _
--- lowercaseIsNull = from usersTable # selectAll # where_ @"age is null"
+lowercaseIsNull :: Q _ _ () _
+lowercaseIsNull = from usersTable # selectAll # where_ @"age is null"
+
+lowercaseNotIn :: Q _ _ (ids :: Array Int) _
+lowercaseNotIn = from usersTable # selectAll # where_ @"id not in $ids"
+
+lowercaseLike :: Q _ _ (pat :: String) _
+lowercaseLike = from usersTable # selectAll # where_ @"name like $pat"
+
+lowercaseBetween :: Q _ _ (lo :: Int, hi :: Int) _
+lowercaseBetween = from usersTable # selectAll # where_ @"age between $lo and $hi"
+
+lowercaseAndOr :: Q _ _ (minAge :: Int, namePat :: String) _
+lowercaseAndOr = from usersTable # selectAll # where_ @"age > $minAge or name like $namePat"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 6: DISTINCT ORDER BY on non-selected column

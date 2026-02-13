@@ -25,6 +25,7 @@ package:
     - prelude: ">=6.0.2 <7.0.0"
     - unsafe-coerce: ">=6.0.0 <7.0.0"
     - yoga-json: ">=5.2.0 <6.0.0"
+    - yoga-om: ">=1.2.2 <2.0.0"
     - yoga-sql-types: ">=0.1.0 <0.2.0"
   test:
     main: Test.Postgres.Main
