@@ -100,6 +100,12 @@ builderSelectWhere = from usersTable # selectAll # where_ @"id = $1" # toSQL
 builderSelectColsWhere :: String
 builderSelectColsWhere = from usersTable # select @"name" # where_ @"age > $1" # toSQL
 
+builderSelectAlias :: String
+builderSelectAlias = from usersTable # select @"name AS n, email AS e" # toSQL
+
+builderWhereComplex :: String
+builderWhereComplex = from usersTable # selectAll # where_ @"name = $1 AND age > $2" # toSQL
+
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -153,3 +159,7 @@ spec = do
         builderSelectWhere `shouldEqual` "SELECT * FROM users WHERE id = $1"
       it "builds SELECT columns with WHERE" do
         builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age > $1"
+      it "builds SELECT with aliases" do
+        builderSelectAlias `shouldEqual` "SELECT name AS n, email AS e FROM users"
+      it "builds complex WHERE" do
+        builderWhereComplex `shouldEqual` "SELECT * FROM users WHERE name = $1 AND age > $2"

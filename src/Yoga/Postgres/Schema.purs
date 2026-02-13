@@ -478,14 +478,101 @@ else instance
 class ValidateAfterName :: Symbol -> Symbol -> Row Type -> Constraint
 class ValidateAfterName acc rest cols
 
+-- End of input
 instance FlushWord acc cols => ValidateAfterName acc "" cols
+
+-- Non-empty: branch on first character
 else instance
   ( FlushWord acc cols
-  , Symbol.Cons "," tail rest
-  , SkipSpaces tail rest'
-  , ValidateColumns rest' cols
+  , Symbol.Cons h t rest
+  , ValidateAfterNameByHead h t cols
   ) =>
   ValidateAfterName acc rest cols
+
+class ValidateAfterNameByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateAfterNameByHead head tail cols
+
+-- Comma: done with this column, continue
+instance
+  ( SkipSpaces tail rest
+  , ValidateColumns rest cols
+  ) =>
+  ValidateAfterNameByHead "," tail cols
+
+-- Anything else (e.g. "AS ..."): extract the word and handle
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , HandleAfterColumnWord word afterWord cols
+  ) =>
+  ValidateAfterNameByHead h t cols
+
+-- Extract the first word from a Symbol (up to space or end)
+class ExtractWord :: Symbol -> Symbol -> Symbol -> Constraint
+class ExtractWord sym word rest | sym -> word rest
+
+instance ExtractWord "" "" ""
+else instance
+  ( Symbol.Cons h t sym
+  , ExtractWordGo h t "" word rest
+  ) =>
+  ExtractWord sym word rest
+
+class ExtractWordGo :: Symbol -> Symbol -> Symbol -> Symbol -> Symbol -> Constraint
+class ExtractWordGo head tail acc word rest | head tail acc -> word rest
+
+-- Stop on space
+instance (SkipSpaces tail rest) => ExtractWordGo " " tail acc acc rest
+-- Stop on comma (keep comma in rest)
+else instance Symbol.Cons "," tail rest => ExtractWordGo "," tail acc acc rest
+-- End of string
+else instance Symbol.Append acc h word => ExtractWordGo h "" acc word ""
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ExtractWordGo nextH nextT acc' word rest
+  ) =>
+  ExtractWordGo h tail acc word rest
+
+-- After a column name + space + word: if AS, skip alias; otherwise error
+class HandleAfterColumnWord :: Symbol -> Symbol -> Row Type -> Constraint
+class HandleAfterColumnWord word rest cols
+
+-- AS alias: skip the alias, then expect comma or end
+instance SkipAlias rest cols => HandleAfterColumnWord "AS" rest cols
+else instance SkipAlias rest cols => HandleAfterColumnWord "as" rest cols
+
+-- Skip the alias word, then expect comma or end of string
+class SkipAlias :: Symbol -> Row Type -> Constraint
+class SkipAlias sym cols
+
+instance SkipAlias "" cols
+else instance
+  ( ExtractWord sym _alias afterAlias
+  , SkipSpaces afterAlias rest
+  , ExpectCommaOrEnd rest cols
+  ) =>
+  SkipAlias sym cols
+
+class ExpectCommaOrEnd :: Symbol -> Row Type -> Constraint
+class ExpectCommaOrEnd sym cols
+
+instance ExpectCommaOrEnd "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ExpectCommaOrEndByHead h t cols
+  ) =>
+  ExpectCommaOrEnd sym cols
+
+class ExpectCommaOrEndByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ExpectCommaOrEndByHead head tail cols
+
+instance
+  ( SkipSpaces tail rest
+  , ValidateColumns rest cols
+  ) =>
+  ExpectCommaOrEndByHead "," tail cols
 
 -- Skip leading spaces
 class SkipSpaces :: Symbol -> Symbol -> Constraint
