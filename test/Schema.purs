@@ -69,15 +69,15 @@ configInsertSQL = insertSQLFor @ConfigTable
 -- Phase 6: Type-safe UPDATE
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- updateResult :: PG.Connection -> Aff Int
--- updateResult conn = update @UsersTable { name: "Bob" } { id: 1 } conn
+updateSQL :: String
+updateSQL = updateSQLFor @UsersTable @(name :: String) @(id :: Int)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 7: Type-safe DELETE
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- deleteResult :: PG.Connection -> Aff Int
--- deleteResult conn = delete @UsersTable { id: 1 } conn
+deleteSQL :: String
+deleteSQL = deleteSQLFor @UsersTable @(id :: Int)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -114,3 +114,11 @@ spec = do
         configDDL `shouldSatisfy` contains (Pattern "score INTEGER NOT NULL DEFAULT 0")
       it "skips Default columns in INSERT" do
         configInsertSQL `shouldEqual` "INSERT INTO config () VALUES () RETURNING *"
+
+    describe "UPDATE SQL" do
+      it "generates UPDATE with SET and WHERE" do
+        updateSQL `shouldEqual` "UPDATE users SET name = $1 WHERE id = $2"
+
+    describe "DELETE SQL" do
+      it "generates DELETE with WHERE" do
+        deleteSQL `shouldEqual` "DELETE FROM users WHERE id = $1"

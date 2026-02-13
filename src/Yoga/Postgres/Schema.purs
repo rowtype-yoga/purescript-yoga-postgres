@@ -240,3 +240,58 @@ instance
     let tableName = reflectSymbol (Proxy :: Proxy name)
     let conditions = whereClauseRL (Proxy :: Proxy whereRL) 1
     "SELECT * FROM " <> tableName <> " WHERE " <> intercalate " AND " conditions
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- UPDATE SQL generation
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ColumnCountRL :: RL.RowList Type -> Constraint
+class ColumnCountRL rl where
+  columnCountRL :: Proxy rl -> Int
+
+instance ColumnCountRL RL.Nil where
+  columnCountRL _ = 0
+
+instance ColumnCountRL tail => ColumnCountRL (RL.Cons name typ tail) where
+  columnCountRL _ = 1 + columnCountRL (Proxy :: Proxy tail)
+
+class UpdateSQLFor table setRow whereRow where
+  updateSQLFor :: String
+
+instance
+  ( IsSymbol name
+  , RowToList setRow setRL
+  , RowToList whereRow whereRL
+  , WhereClauseRL setRL
+  , WhereClauseRL whereRL
+  , ColumnCountRL setRL
+  ) =>
+  UpdateSQLFor (Table name cols) setRow whereRow where
+  updateSQLFor = do
+    let tableName = reflectSymbol (Proxy :: Proxy name)
+    let setClauses = whereClauseRL (Proxy :: Proxy setRL) 1
+    let setCount = columnCountRL (Proxy :: Proxy setRL)
+    let whereClauses = whereClauseRL (Proxy :: Proxy whereRL) (setCount + 1)
+    "UPDATE " <> tableName
+      <> " SET "
+      <> intercalate ", " setClauses
+      <> " WHERE "
+      <> intercalate " AND " whereClauses
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- DELETE SQL generation
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class DeleteSQLFor table whereRow where
+  deleteSQLFor :: String
+
+instance
+  ( IsSymbol name
+  , RowToList whereRow whereRL
+  , WhereClauseRL whereRL
+  ) =>
+  DeleteSQLFor (Table name cols) whereRow where
+  deleteSQLFor = do
+    let tableName = reflectSymbol (Proxy :: Proxy name)
+    let conditions = whereClauseRL (Proxy :: Proxy whereRL) 1
+    "DELETE FROM " <> tableName <> " WHERE " <> intercalate " AND " conditions
