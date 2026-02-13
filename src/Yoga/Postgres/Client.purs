@@ -5,6 +5,7 @@ import Prelude
 import Data.Array (intercalate, mapWithIndex)
 import Data.Maybe (Maybe)
 import Data.Symbol (class IsSymbol, reflectSymbol)
+import Effect.Aff (Aff)
 import Prim.Boolean (True, False)
 import Prim.Row (class Cons, class Lacks, class Union) as Row
 import Prim.RowList as RL
@@ -13,7 +14,6 @@ import Prim.TypeError (class Fail, Text)
 import Type.Proxy (Proxy(..))
 import Type.RowList (class ListToRow)
 import Yoga.JSON (class ReadForeign)
-import Yoga.Om (Om, ask)
 import Yoga.Postgres as PG
 import Yoga.Postgres.Schema
   ( class ColumnCountRL, class ColumnNamesRL, class ExtractType
@@ -25,12 +25,6 @@ import Yoga.Postgres.Schema
   , columnCountRL, columnNamesRL, fieldToPGValue, recordValuesRL, setClauseRL
   , unsafeDecodeRow, unsafeDecodeRows
   )
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Context type for Om
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-type PgCtx r = (pgConnection :: PG.Connection | r)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Type extraction from tables
@@ -162,20 +156,21 @@ instance
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 findAll
-  :: forall name cols row ctx errs
+  :: forall name cols row
    . IsSymbol name
   => TableRow (Table name cols) row
   => ReadForeign { | row }
   => Proxy (Table name cols)
-  -> Om { | PgCtx ctx } errs (Array { | row })
-findAll _ = do
-  { pgConnection } <- ask
-  PG.query (PG.SQL sql) [] pgConnection # liftAff <#> \r -> unsafeDecodeRows r.rows
+  -> PG.Connection
+  -> Aff (Array { | row })
+findAll _ conn = do
+  result <- PG.query (PG.SQL sql) [] conn
+  pure (unsafeDecodeRows result.rows)
   where
   sql = "SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name)
 
 findById
-  :: forall name cols row pkCol pkType ctx errs
+  :: forall name cols row pkCol pkType
    . IsSymbol name
   => IsSymbol pkCol
   => TableRow (Table name cols) row
@@ -183,18 +178,19 @@ findById
   => FieldToPGValue pkType
   => ReadForeign { | row }
   => Proxy (Table name cols)
+  -> PG.Connection
   -> pkType
-  -> Om { | PgCtx ctx } errs (Maybe { | row })
-findById _ pk = do
-  { pgConnection } <- ask
-  PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] pgConnection # liftAff <#> \r -> r <#> unsafeDecodeRow
+  -> Aff (Maybe { | row })
+findById _ conn pk = do
+  result <- PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] conn
+  pure (result <#> unsafeDecodeRow)
   where
   sql = "SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name)
     <> " WHERE " <> reflectSymbol (Proxy :: Proxy pkCol) <> " = $1"
 
 create
   :: forall name cols colsRL insertableRL insertable requiredRL required
-       optionalProvided missing userRow userRowRL row ctx errs
+       optionalProvided missing userRow userRowRL row
    . IsSymbol name
   => RowToList cols colsRL
   => InsertableColumnsRL colsRL insertableRL
@@ -209,11 +205,12 @@ create
   => TableRow (Table name cols) row
   => ReadForeign { | row }
   => Proxy (Table name cols)
+  -> PG.Connection
   -> { | userRow }
-  -> Om { | PgCtx ctx } errs (Maybe { | row })
-create _ rec = do
-  { pgConnection } <- ask
-  PG.queryOne (PG.SQL sql) values pgConnection # liftAff <#> \r -> r <#> unsafeDecodeRow
+  -> Aff (Maybe { | row })
+create _ conn rec = do
+  result <- PG.queryOne (PG.SQL sql) values conn
+  pure (result <#> unsafeDecodeRow)
   where
   colNames = columnNamesRL (Proxy :: Proxy userRowRL)
   placeholders = colNames # mapWithIndex \i _ -> "$" <> show (i + 1)
@@ -224,7 +221,7 @@ create _ rec = do
   values = recordValuesRL (Proxy :: Proxy userRowRL) rec
 
 updateById
-  :: forall name cols row pkCol pkType setRow setRL ctx errs
+  :: forall name cols row pkCol pkType setRow setRL
    . IsSymbol name
   => IsSymbol pkCol
   => TableRow (Table name cols) row
@@ -237,12 +234,13 @@ updateById
   => FieldToPGValue pkType
   => ReadForeign { | row }
   => Proxy (Table name cols)
+  -> PG.Connection
   -> pkType
   -> { | setRow }
-  -> Om { | PgCtx ctx } errs (Maybe { | row })
-updateById _ pk rec = do
-  { pgConnection } <- ask
-  PG.queryOne (PG.SQL sql) values pgConnection # liftAff <#> \r -> r <#> unsafeDecodeRow
+  -> Aff (Maybe { | row })
+updateById _ conn pk rec = do
+  result <- PG.queryOne (PG.SQL sql) values conn
+  pure (result <#> unsafeDecodeRow)
   where
   setClauses = setClauseRL (Proxy :: Proxy setRL) 1
   setCount = columnCountRL (Proxy :: Proxy setRL)
@@ -253,17 +251,17 @@ updateById _ pk rec = do
   values = recordValuesRL (Proxy :: Proxy setRL) rec <> [ fieldToPGValue pk ]
 
 deleteById
-  :: forall name cols pkCol pkType ctx errs
+  :: forall name cols pkCol pkType
    . IsSymbol name
   => IsSymbol pkCol
   => FindPrimaryKey (Table name cols) pkCol pkType
   => FieldToPGValue pkType
   => Proxy (Table name cols)
+  -> PG.Connection
   -> pkType
-  -> Om { | PgCtx ctx } errs Int
-deleteById _ pk = do
-  { pgConnection } <- ask
-  PG.execute (PG.SQL sql) [ fieldToPGValue pk ] pgConnection # liftAff
+  -> Aff Int
+deleteById _ conn pk =
+  PG.execute (PG.SQL sql) [ fieldToPGValue pk ] conn
   where
   sql = "DELETE FROM " <> reflectSymbol (Proxy :: Proxy name)
     <> " WHERE " <> reflectSymbol (Proxy :: Proxy pkCol) <> " = $1"
@@ -274,7 +272,7 @@ deleteById _ pk = do
 
 findWith
   :: forall childName childCols parentName parentCols
-       childRow parentRow localCol parentCol rest result ctx errs
+       childRow parentRow localCol parentCol rest result
    . IsSymbol childName
   => IsSymbol parentName
   => IsSymbol localCol
@@ -287,10 +285,11 @@ findWith
   => ReadForeign { | result }
   => Proxy (Table childName childCols)
   -> Proxy (Table parentName parentCols)
-  -> Om { | PgCtx ctx } errs (Array { | result })
-findWith _ _ = do
-  { pgConnection } <- ask
-  PG.query (PG.SQL sql) [] pgConnection # liftAff <#> \r -> unsafeDecodeRows r.rows
+  -> PG.Connection
+  -> Aff (Array { | result })
+findWith _ _ conn = do
+  result <- PG.query (PG.SQL sql) [] conn
+  pure (unsafeDecodeRows result.rows)
   where
   childTbl = reflectSymbol (Proxy :: Proxy childName)
   parentTbl = reflectSymbol (Proxy :: Proxy parentName)
@@ -303,7 +302,7 @@ findWith _ _ = do
 
 findByIdWith
   :: forall childName childCols parentName parentCols
-       childRow parentRow localCol parentCol pkCol pkType rest result ctx errs
+       childRow parentRow localCol parentCol pkCol pkType rest result
    . IsSymbol childName
   => IsSymbol parentName
   => IsSymbol localCol
@@ -319,11 +318,12 @@ findByIdWith
   => ReadForeign { | result }
   => Proxy (Table childName childCols)
   -> Proxy (Table parentName parentCols)
+  -> PG.Connection
   -> pkType
-  -> Om { | PgCtx ctx } errs (Maybe { | result })
-findByIdWith _ _ pk = do
-  { pgConnection } <- ask
-  PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] pgConnection # liftAff <#> \r -> r <#> unsafeDecodeRow
+  -> Aff (Maybe { | result })
+findByIdWith _ _ conn pk = do
+  result <- PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] conn
+  pure (result <#> unsafeDecodeRow)
   where
   childTbl = reflectSymbol (Proxy :: Proxy childName)
   parentTbl = reflectSymbol (Proxy :: Proxy parentName)
@@ -342,7 +342,7 @@ findByIdWith _ _ pk = do
 
 findIncluding
   :: forall @label parentName parentCols childName childCols
-       parentRow childRow localCol parentCol result ctx errs
+       parentRow childRow localCol parentCol result
    . IsSymbol label
   => IsSymbol parentName
   => IsSymbol childName
@@ -356,10 +356,11 @@ findIncluding
   => ReadForeign { | result }
   => Proxy (Table parentName parentCols)
   -> Proxy (Table childName childCols)
-  -> Om { | PgCtx ctx } errs (Array { | result })
-findIncluding _ _ = do
-  { pgConnection } <- ask
-  PG.query (PG.SQL sql) [] pgConnection # liftAff <#> \r -> unsafeDecodeRows r.rows
+  -> PG.Connection
+  -> Aff (Array { | result })
+findIncluding _ _ conn = do
+  result <- PG.query (PG.SQL sql) [] conn
+  pure (unsafeDecodeRows result.rows)
   where
   parentTbl = reflectSymbol (Proxy :: Proxy parentName)
   childTbl = reflectSymbol (Proxy :: Proxy childName)
@@ -373,7 +374,7 @@ findIncluding _ _ = do
 
 findByIdIncluding
   :: forall @label parentName parentCols childName childCols
-       parentRow childRow localCol parentCol pkCol pkType result ctx errs
+       parentRow childRow localCol parentCol pkCol pkType result
    . IsSymbol label
   => IsSymbol parentName
   => IsSymbol childName
@@ -390,11 +391,12 @@ findByIdIncluding
   => ReadForeign { | result }
   => Proxy (Table parentName parentCols)
   -> Proxy (Table childName childCols)
+  -> PG.Connection
   -> pkType
-  -> Om { | PgCtx ctx } errs (Maybe { | result })
-findByIdIncluding _ _ pk = do
-  { pgConnection } <- ask
-  PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] pgConnection # liftAff <#> \r -> r <#> unsafeDecodeRow
+  -> Aff (Maybe { | result })
+findByIdIncluding _ _ conn pk = do
+  result <- PG.queryOne (PG.SQL sql) [ fieldToPGValue pk ] conn
+  pure (result <#> unsafeDecodeRow)
   where
   parentTbl = reflectSymbol (Proxy :: Proxy parentName)
   childTbl = reflectSymbol (Proxy :: Proxy childName)

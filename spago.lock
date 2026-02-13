@@ -54,11 +54,68 @@
               "yoga-json": ">=5.2.0 <6.0.0"
             },
             {
-              "yoga-om": ">=1.2.2 <2.0.0"
-            },
-            {
               "yoga-sql-types": ">=0.1.0 <0.2.0"
             }
+          ],
+          "build_plan": [
+            "aff",
+            "arrays",
+            "bifunctors",
+            "catenable-lists",
+            "const",
+            "contravariant",
+            "control",
+            "datetime",
+            "distributive",
+            "effect",
+            "either",
+            "enums",
+            "exceptions",
+            "exists",
+            "foldable-traversable",
+            "foreign",
+            "foreign-object",
+            "free",
+            "functions",
+            "functors",
+            "gen",
+            "heterogeneous",
+            "identity",
+            "integers",
+            "invariant",
+            "js-bigints",
+            "js-date",
+            "js-promise",
+            "js-promise-aff",
+            "lazy",
+            "lists",
+            "maybe",
+            "newtype",
+            "nonempty",
+            "nullable",
+            "numbers",
+            "ordered-collections",
+            "orders",
+            "parallel",
+            "partial",
+            "prelude",
+            "profunctor",
+            "record",
+            "refs",
+            "safe-coerce",
+            "st",
+            "strings",
+            "tailrec",
+            "transformers",
+            "tuples",
+            "type-equality",
+            "typelevel-prelude",
+            "unfoldable",
+            "unsafe-coerce",
+            "variant",
+            "yoga-json",
+            "yoga-sql-types",
+            "yoga-tree"
           ]
         },
         "test": {
@@ -78,6 +135,61 @@
             {
               "yoga-test-docker": ">=0.1.0 <1.0.0"
             }
+          ],
+          "build_plan": [
+            "aff",
+            "ansi",
+            "arrays",
+            "avar",
+            "bifunctors",
+            "catenable-lists",
+            "console",
+            "const",
+            "contravariant",
+            "control",
+            "datetime",
+            "distributive",
+            "effect",
+            "either",
+            "enums",
+            "exceptions",
+            "exists",
+            "foldable-traversable",
+            "fork",
+            "free",
+            "functions",
+            "functors",
+            "gen",
+            "identity",
+            "integers",
+            "invariant",
+            "lazy",
+            "lists",
+            "maybe",
+            "mmorph",
+            "newtype",
+            "nonempty",
+            "now",
+            "numbers",
+            "ordered-collections",
+            "orders",
+            "parallel",
+            "partial",
+            "pipes",
+            "prelude",
+            "profunctor",
+            "refs",
+            "safe-coerce",
+            "spec",
+            "st",
+            "strings",
+            "tailrec",
+            "transformers",
+            "tuples",
+            "type-equality",
+            "unfoldable",
+            "unsafe-coerce",
+            "yoga-test-docker"
           ]
         }
       }
@@ -753,19 +865,6 @@
         "unsafe-coerce"
       ]
     },
-    "record-studio": {
-      "type": "registry",
-      "version": "1.0.4",
-      "integrity": "sha256-CRnFvSXpDDzio+buibUxFU9zPZDd7/lzrYC1Ya3FuIw=",
-      "dependencies": [
-        "heterogeneous",
-        "lists",
-        "prelude",
-        "record",
-        "typelevel-prelude",
-        "unsafe-coerce"
-      ]
-    },
     "refs": {
       "type": "registry",
       "version": "6.0.0",
@@ -914,23 +1013,6 @@
         "type-equality"
       ]
     },
-    "uncurried-transformers": {
-      "type": "registry",
-      "version": "1.1.0",
-      "integrity": "sha256-AqqBMzVLzozVoDorE3QcVVRDkLd7O3624mRHCDnPhaI=",
-      "dependencies": [
-        "control",
-        "effect",
-        "either",
-        "functions",
-        "identity",
-        "prelude",
-        "safe-coerce",
-        "tailrec",
-        "transformers",
-        "tuples"
-      ]
-    },
     "unfoldable": {
       "type": "registry",
       "version": "6.0.0",
@@ -1002,35 +1084,6 @@
         "unsafe-coerce",
         "variant",
         "yoga-tree"
-      ]
-    },
-    "yoga-om": {
-      "type": "registry",
-      "version": "1.2.2",
-      "integrity": "sha256-uDV3/o8mUOTIgSEQFqIATPyladzL8BcjURvfS901hgI=",
-      "dependencies": [
-        "aff",
-        "avar",
-        "console",
-        "control",
-        "datetime",
-        "effect",
-        "either",
-        "exceptions",
-        "functions",
-        "maybe",
-        "newtype",
-        "parallel",
-        "prelude",
-        "record",
-        "record-studio",
-        "tailrec",
-        "transformers",
-        "tuples",
-        "typelevel-prelude",
-        "uncurried-transformers",
-        "unsafe-coerce",
-        "variant"
       ]
     },
     "yoga-sql-types": {
