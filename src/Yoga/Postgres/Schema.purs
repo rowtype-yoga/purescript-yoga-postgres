@@ -581,8 +581,13 @@ else instance
 class ParseSelectGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
 class ParseSelectGo head tail acc tables accRL outRL | head tail acc tables accRL -> outRL
 
--- Comma: emit column, continue
+-- Leading/double comma: no column name before comma
 instance
+  Fail (Text "Unexpected comma in SELECT clause (missing column name)") =>
+  ParseSelectGo "," tail "" tables accRL outRL
+
+-- Comma: emit column, continue
+else instance
   ( ResolveColumn acc tables (Column typ constraints)
   , SplitOnDot acc _hasDot _table colName
   , SkipSpaces tail rest
