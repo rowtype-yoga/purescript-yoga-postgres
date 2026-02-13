@@ -24,6 +24,7 @@
     "test:ts": "bun run test-with-docker.ts"
   },
   "dependencies": {
-    "pg": "^8.11.0"
+    "pg": "^8.11.0",
+    "postgres": "^3.4.8"
   }
 }

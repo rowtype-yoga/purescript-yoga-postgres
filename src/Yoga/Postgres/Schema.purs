@@ -2,8 +2,7 @@ module Yoga.Postgres.Schema where
 
 import Prelude
 
-import Data.Array (intercalate, length, mapWithIndex)
-
+import Data.Array (intercalate, mapWithIndex)
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol, reflectSymbol)
@@ -33,9 +32,6 @@ data None
 
 data Default :: Symbol -> Type
 data Default a
-
-data Now
-data GenRandomUUID
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
