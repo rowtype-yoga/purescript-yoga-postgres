@@ -890,38 +890,67 @@ else instance
 -- Query builder
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-newtype Q :: Symbol -> Row Type -> Row Type -> Row Type -> Type
-newtype Q name cols result params = Q { sql :: String, values :: Array PG.PGValue }
+newtype Q :: Symbol -> Row Type -> Row Type -> Row Type -> Row Type -> Type
+newtype Q name cols result params stage = Q { sql :: String, values :: Array PG.PGValue }
 
-from :: forall name cols. Proxy (Table name cols) -> Q name cols () ()
+class HasClause :: Symbol -> Row Type -> Constraint
+class HasClause label row
+
+instance Row.Cons label Unit rest row => HasClause label row
+
+from :: forall name cols. Proxy (Table name cols) -> Q name cols () () ()
 from _ = Q { sql: "", values: [] }
 
 selectAll
-  :: forall name cols result r p
+  :: forall name cols result r p stage stage'
    . IsSymbol name
   => StripColumns cols result
-  => Q name cols r p
-  -> Q name cols result p
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q name cols r p stage
+  -> Q name cols result p stage'
 selectAll _ = Q { sql: "SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
 
 select
-  :: forall @sel name cols result r p
+  :: forall @sel name cols result r p stage stage'
    . IsSymbol name
   => IsSymbol sel
   => ParseSelect sel cols result
-  => Q name cols r p
-  -> Q name cols result p
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q name cols r p stage
+  -> Q name cols result p stage'
 select _ = Q { sql: "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
 
 where_
-  :: forall @whr name cols result params p
+  :: forall @whr name cols result params p stage stage'
    . IsSymbol whr
   => ParseWhere whr cols params
-  => Q name cols result p
-  -> Q name cols result params
+  => Row.Lacks "where" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "where" Unit stage stage'
+  => Q name cols result p stage
+  -> Q name cols result params stage'
 where_ (Q q) = Q (q { sql = q.sql <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr) })
 
-toSQL :: forall name cols result params. Q name cols result params -> String
+toSQL :: forall name cols result params stage. Q name cols result params stage -> String
 toSQL (Q q) = q.sql
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -994,16 +1023,21 @@ instance
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 insert
-  :: forall name cols colsRL insertableRL insertRow
+  :: forall name cols colsRL insertableRL insertRow stage stage'
    . RowToList cols colsRL
   => InsertableColumnsRL colsRL insertableRL
   => ListToRow insertableRL insertRow
   => IsSymbol name
   => InsertColumnsRL colsRL
   => RecordValuesRL insertableRL insertRow
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Cons "insert" Unit stage stage'
   => { | insertRow }
-  -> Q name cols () ()
-  -> Q name cols () ()
+  -> Q name cols () () stage
+  -> Q name cols () () stage'
 insert rec _ = Q { sql, values }
   where
   tableName = reflectSymbol (Proxy :: Proxy name)
@@ -1023,11 +1057,14 @@ insert rec _ = Q { sql, values }
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 returning
-  :: forall @sel name cols result p
+  :: forall @sel name cols result p stage stage'
    . IsSymbol sel
   => ParseSelect sel cols result
-  => Q name cols () p
-  -> Q name cols result p
+  => Row.Lacks "returning" stage
+  => Row.Lacks "select" stage
+  => Row.Cons "returning" Unit stage stage'
+  => Q name cols () p stage
+  -> Q name cols result p stage'
 returning (Q q) = Q (q { sql = q.sql <> " RETURNING " <> reflectSymbol (Proxy :: Proxy sel) })
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1057,15 +1094,20 @@ instance (IsSymbol name, SetClauseRL tail) => SetClauseRL (RL.Cons name typ tail
       <> setClauseRL (Proxy :: Proxy tail) (idx + 1)
 
 set
-  :: forall name cols setRow setRL
+  :: forall name cols setRow setRL stage stage'
    . RowToList setRow setRL
   => IsSymbol name
   => ValidateSetColumnsRL setRL cols
   => SetClauseRL setRL
   => RecordValuesRL setRL setRow
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Cons "set" Unit stage stage'
   => { | setRow }
-  -> Q name cols () ()
-  -> Q name cols () ()
+  -> Q name cols () () stage
+  -> Q name cols () () stage'
 set rec _ = Q { sql, values }
   where
   tableName = reflectSymbol (Proxy :: Proxy name)
@@ -1078,10 +1120,15 @@ set rec _ = Q { sql, values }
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 delete
-  :: forall name cols r p
+  :: forall name cols r p stage stage'
    . IsSymbol name
-  => Q name cols r p
-  -> Q name cols () ()
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Cons "delete" Unit stage stage'
+  => Q name cols r p stage
+  -> Q name cols () () stage'
 delete _ = Q { sql: "DELETE FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1089,25 +1136,36 @@ delete _ = Q { sql: "DELETE FROM " <> reflectSymbol (Proxy :: Proxy name), value
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 orderBy
-  :: forall @cols name tableCols result params
+  :: forall @cols name tableCols result params stage stage'
    . IsSymbol cols
   => ValidateOrderBy cols tableCols
-  => Q name tableCols result params
-  -> Q name tableCols result params
+  => HasClause "select" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "orderBy" Unit stage stage'
+  => Q name tableCols result params stage
+  -> Q name tableCols result params stage'
 orderBy (Q q) = Q (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
 
 limit
-  :: forall name cols result params
-   . Int
-  -> Q name cols result params
-  -> Q name cols result params
+  :: forall name cols result params stage stage'
+   . HasClause "select" stage
+  => Row.Lacks "limit" stage
+  => Row.Cons "limit" Unit stage stage'
+  => Int
+  -> Q name cols result params stage
+  -> Q name cols result params stage'
 limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
 
 offset
-  :: forall name cols result params
-   . Int
-  -> Q name cols result params
-  -> Q name cols result params
+  :: forall name cols result params stage stage'
+   . HasClause "select" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "offset" Unit stage stage'
+  => Int
+  -> Q name cols result params stage
+  -> Q name cols result params stage'
 offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
 
 -- Validate ORDER BY columns: "name, age DESC" → validate name, age exist
@@ -1333,13 +1391,16 @@ else instance
   MatchSymbol actual expected
 
 onConflict
-  :: forall @target @action name cols result params
+  :: forall @target @action name cols result params stage stage'
    . IsSymbol target
   => IsSymbol action
   => ValidateColumns target cols
   => ParseConflictAction action cols
-  => Q name cols result params
-  -> Q name cols result params
+  => HasClause "insert" stage
+  => Row.Lacks "conflict" stage
+  => Row.Cons "conflict" Unit stage stage'
+  => Q name cols result params stage
+  -> Q name cols result params stage'
 onConflict (Q q) = Q
   ( q
       { sql = q.sql
@@ -1351,11 +1412,14 @@ onConflict (Q q) = Q
   )
 
 onConflictDoNothing
-  :: forall @target name cols result params
+  :: forall @target name cols result params stage stage'
    . IsSymbol target
   => ValidateColumns target cols
-  => Q name cols result params
-  -> Q name cols result params
+  => HasClause "insert" stage
+  => Row.Lacks "conflict" stage
+  => Row.Cons "conflict" Unit stage stage'
+  => Q name cols result params stage
+  -> Q name cols result params stage'
 onConflictDoNothing (Q q) = Q
   ( q
       { sql = q.sql
@@ -1409,13 +1473,13 @@ replaceNamedParams offset entries sql = do
   { sql: sql', values: map (\e -> unsafeCoerce e.value) indexed }
 
 runQuery
-  :: forall name cols result params paramsRL
+  :: forall name cols result params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
   => PG.Connection
   -> { | params }
-  -> Q name cols result params
+  -> Q name cols result params stage
   -> Aff (Array { | result })
 runQuery conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1425,13 +1489,13 @@ runQuery conn params (Q q) = do
   pure (unsafeDecodeRows result.rows)
 
 runQueryOne
-  :: forall name cols result params paramsRL
+  :: forall name cols result params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
   => PG.Connection
   -> { | params }
-  -> Q name cols result params
+  -> Q name cols result params stage
   -> Aff (Maybe { | result })
 runQueryOne conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1441,12 +1505,12 @@ runQueryOne conn params (Q q) = do
   pure (result <#> unsafeDecodeRow)
 
 runExecute
-  :: forall name cols params paramsRL
+  :: forall name cols params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => PG.Connection
   -> { | params }
-  -> Q name cols () params
+  -> Q name cols () params stage
   -> Aff Int
 runExecute conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params

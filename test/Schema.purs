@@ -98,36 +98,42 @@ typedSelectAll
   :: Q "users" _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        ()
+       _
 typedSelectAll = from usersTable # selectAll
 
 typedSelectCols
   :: Q "users" _
        (name :: String, email :: String)
        ()
+       _
 typedSelectCols = from usersTable # select @"name, email"
 
 typedSelectAlias
   :: Q "users" _
        (name :: String, e :: String)
        ()
+       _
 typedSelectAlias = from usersTable # select @"name, email AS e"
 
 typedWhere
   :: Q "users" _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        (id :: Int)
+       _
 typedWhere = from usersTable # selectAll # where_ @"id = $id"
 
 typedWhereComplex
   :: Q "users" _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        (name :: String, age :: Int)
+       _
 typedWhereComplex = from usersTable # selectAll # where_ @"name = $name AND age > $age"
 
 typedSelectColsWhere
   :: Q "users" _
        (name :: String)
        (age :: Int)
+       _
 typedSelectColsWhere = from usersTable # select @"name" # where_ @"age > $age"
 
 builderSelectAll :: String
@@ -153,32 +159,32 @@ builderWhereComplex = typedWhereComplex # toSQL
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 typedInsert
-  :: Q "users" _ () ()
+  :: Q "users" _ () () _
 typedInsert = from usersTable # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
 
 typedInsertReturning
-  :: Q "users" _ (id :: Int, name :: String) ()
+  :: Q "users" _ (id :: Int, name :: String) () _
 typedInsertReturning = from usersTable
   # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
   # returning @"id, name"
 
 typedSet
-  :: Q "users" _ () ()
+  :: Q "users" _ () () _
 typedSet = from usersTable # set { name: "Bob" }
 
 typedSetWhere
-  :: Q "users" _ () (id :: Int)
+  :: Q "users" _ () (id :: Int) _
 typedSetWhere = from usersTable # set { name: "Bob" } # where_ @"id = $id"
 
 typedSetReturning
-  :: Q "users" _ (id :: Int, name :: String, email :: String) (id :: Int)
+  :: Q "users" _ (id :: Int, name :: String, email :: String) (id :: Int) _
 typedSetReturning = from usersTable
   # set { name: "Bob" }
   # where_ @"id = $id"
   # returning @"id, name, email"
 
 typedUpsert
-  :: Q "users" _ () ()
+  :: Q "users" _ () () _
 typedUpsert = from usersTable
   # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
   # onConflictDoNothing @"email"
@@ -199,23 +205,23 @@ builderUpsert :: String
 builderUpsert = typedUpsert # toSQL
 
 typedDelete
-  :: Q "users" _ () (id :: Int)
+  :: Q "users" _ () (id :: Int) _
 typedDelete = from usersTable # delete # where_ @"id = $id"
 
 typedDeleteReturning
-  :: Q "users" _ (name :: String, email :: String) (id :: Int)
+  :: Q "users" _ (name :: String, email :: String) (id :: Int) _
 typedDeleteReturning = from usersTable # delete # where_ @"id = $id" # returning @"name, email"
 
 typedOrderBy
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedOrderBy = from usersTable # selectAll # orderBy @"name"
 
 typedOrderByDesc
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedOrderByDesc = from usersTable # selectAll # orderBy @"name DESC, age ASC"
 
 typedLimitOffset
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit 10 # offset 5
 
 builderDelete :: String
