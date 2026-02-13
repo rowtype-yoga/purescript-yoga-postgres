@@ -321,7 +321,101 @@ queryUserById conn =
 
 queryComplexWhere :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
 queryComplexWhere conn =
-  from usersTable # selectAll # where_ @"name = $name AND age > $age" # runQuery conn { name: "Alice", age: 21 }
+  from usersTable # selectAll
+    # where_ @"name = $name AND age > $age"
+    # runQuery conn { name: "Alice", age: 21 }
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Phase 11: JOIN builder
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type PostsTable = Table "posts"
+  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
+  , title :: Column String None
+  , body :: Column String None
+  , user_id :: Column Int None
+  )
+
+postsTable :: Proxy PostsTable
+postsTable = Proxy
+
+type CommentsTable = Table "comments"
+  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
+  , text :: Column String None
+  , post_id :: Column Int None
+  , user_id :: Column Int None
+  )
+
+commentsTable :: Proxy CommentsTable
+commentsTable = Proxy
+
+typedInnerJoin
+  :: JQ
+       ( users :: (id :: Column Int (PrimaryKey /\ AutoIncrement), name :: Column String None, email :: Column String Unique, age :: Column (Maybe Int) None)
+       , posts :: (id :: Column Int (PrimaryKey /\ AutoIncrement), title :: Column String None, body :: Column String None, user_id :: Column Int None)
+       )
+       (name :: String, title :: String)
+       (age :: Int)
+       _
+typedInnerJoin = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"users.name, posts.title"
+  # whereJQ @"users.age > $age"
+
+typedInnerJoinSQL :: String
+typedInnerJoinSQL = typedInnerJoin # toSQLJQ
+
+typedInnerJoinAlias
+  :: JQ _ (user_name :: String, post_title :: String) () _
+typedInnerJoinAlias = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"users.name AS user_name, posts.title AS post_title"
+
+typedLeftJoin
+  :: JQ _ (name :: String, title :: Maybe String) () _
+typedLeftJoin = from usersTable
+  # leftJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"users.name, posts.title"
+
+typedLeftJoinSQL :: String
+typedLeftJoinSQL = typedLeftJoin # toSQLJQ
+
+typedJoinOrderBy
+  :: JQ _ (name :: String, title :: String) () _
+typedJoinOrderBy = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"users.name, posts.title"
+  # orderByJQ @"users.name ASC"
+
+typedJoinLimitOffset
+  :: JQ _ (name :: String, title :: String) () _
+typedJoinLimitOffset = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"users.name, posts.title"
+  # orderByJQ @"users.name"
+  # limitJQ 10
+  # offsetJQ 5
+
+typedUnqualifiedSelect
+  :: JQ _ (title :: String, name :: String) () _
+typedUnqualifiedSelect = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # selectJQ @"title, name"
+
+typedMultiJoin
+  :: JQ _ (name :: String, title :: String, text :: String) () _
+typedMultiJoin = from usersTable
+  # innerJoin @"users.id = posts.user_id" postsTable
+  # innerJoinJQ @"posts.id = comments.post_id" commentsTable
+  # selectJQ @"users.name, posts.title, comments.text"
+
+joinQueryExecution :: PG.Connection -> Aff (Array { name :: String, title :: String })
+joinQueryExecution conn =
+  from usersTable
+    # innerJoin @"users.id = posts.user_id" postsTable
+    # selectJQ @"users.name, posts.title"
+    # whereJQ @"users.age > $age"
+    # runQueryJQ conn { age: 25 }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -421,6 +515,22 @@ spec = do
         builderOrderByDesc `shouldEqual` "SELECT * FROM users ORDER BY name DESC, age ASC"
       it "builds LIMIT and OFFSET" do
         builderLimitOffset `shouldEqual` "SELECT * FROM users ORDER BY name LIMIT 10 OFFSET 5"
+
+    describe "Builder JOIN" do
+      it "builds INNER JOIN with SELECT and WHERE" do
+        typedInnerJoinSQL `shouldEqual` "SELECT users.name, posts.title FROM users INNER JOIN posts ON users.id = posts.user_id WHERE users.age > $age"
+      it "builds LEFT JOIN" do
+        typedLeftJoinSQL `shouldEqual` "SELECT users.name, posts.title FROM users LEFT JOIN posts ON users.id = posts.user_id"
+      it "builds JOIN with ORDER BY, LIMIT, OFFSET" do
+        let sql = typedJoinLimitOffset # toSQLJQ
+        sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
+        sql `shouldSatisfy` contains (Pattern "ORDER BY users.name")
+        sql `shouldSatisfy` contains (Pattern "LIMIT 10")
+        sql `shouldSatisfy` contains (Pattern "OFFSET 5")
+      it "builds multi-way JOIN" do
+        let sql = typedMultiJoin # toSQLJQ
+        sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
+        sql `shouldSatisfy` contains (Pattern "INNER JOIN comments ON")
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
@@ -625,3 +735,71 @@ integrationSpec conn = do
         # where_ @"name = $name"
         # runQueryOne conn { name: "ToDelete" }
       result `shouldEqual` Nothing
+
+  describe "Builder JOIN execution" do
+    it "INNER JOIN returns matching rows" do
+      rows <- from usersTable
+        # innerJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name, posts.title"
+        # runQueryJQ conn {}
+      Array.length rows `shouldEqual` 2
+      (map _.name rows) `shouldSatisfy` Array.elem "Alice"
+      (map _.title rows) `shouldSatisfy` Array.elem "Alice's Post"
+
+    it "INNER JOIN with WHERE filters correctly" do
+      rows <- from usersTable
+        # innerJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name, posts.title"
+        # whereJQ @"users.age > $age"
+        # runQueryJQ conn { age: 25 }
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Bob" ]
+      (map _.title rows) `shouldEqual` [ "Bob's Post" ]
+
+    it "INNER JOIN with aliases" do
+      rows <- from usersTable
+        # innerJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name AS author, posts.title AS post_title"
+        # runQueryJQ conn {}
+      Array.length rows `shouldEqual` 2
+      (map _.author rows) `shouldSatisfy` Array.elem "Alice"
+      (map _.post_title rows) `shouldSatisfy` Array.elem "Bob's Post"
+
+    it "INNER JOIN with ORDER BY and LIMIT" do
+      rows <- from usersTable
+        # innerJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name, posts.title"
+        # orderByJQ @"users.name ASC"
+        # limitJQ 1
+        # runQueryJQ conn {}
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Alice" ]
+
+    it "LEFT JOIN includes unmatched rows" do
+      _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
+        [ PG.toPGValue "NoPost", PG.toPGValue "nopost@example.com", PG.toPGValue 40 ]
+        conn
+      rows <- from usersTable
+        # leftJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name, posts.title"
+        # orderByJQ @"users.name ASC"
+        # runQueryJQ conn {}
+      Array.length rows `shouldSatisfy` (_ >= 3)
+      let noPostRow = Array.find (\r -> r.name == "NoPost") rows
+      case noPostRow of
+        Just r -> r.title `shouldEqual` Nothing
+        Nothing -> shouldEqual "found" "nothing"
+      _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
+        [ PG.toPGValue "NoPost" ]
+        conn
+      pure unit
+
+    it "runQueryOneJQ returns Just for match" do
+      result <- from usersTable
+        # innerJoin @"users.id = posts.user_id" postsTable
+        # selectJQ @"users.name, posts.title"
+        # whereJQ @"users.name = $name"
+        # runQueryOneJQ conn { name: "Alice" }
+      case result of
+        Just r -> r.title `shouldEqual` "Alice's Post"
+        Nothing -> shouldEqual "found" "nothing"
