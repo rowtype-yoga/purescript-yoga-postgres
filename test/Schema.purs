@@ -162,10 +162,14 @@ typedInsert
   :: Q "users" _ () () _
 typedInsert = from usersTable # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
 
+typedInsertOptional
+  :: Q "users" _ () () _
+typedInsertOptional = from usersTable # insert { name: "Alice", email: "alice@example.com" }
+
 typedInsertReturning
   :: Q "users" _ (id :: Int, name :: String) () _
 typedInsertReturning = from usersTable
-  # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
+  # insert { name: "Alice", email: "alice@example.com" }
   # returning @"id, name"
 
 typedSet
@@ -223,6 +227,14 @@ typedOrderByDesc = from usersTable # selectAll # orderBy @"name DESC, age ASC"
 typedLimitOffset
   :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit 10 # offset 5
+
+typedInArray
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Array Int) _
+typedInArray = from usersTable # selectAll # where_ @"id IN $id"
+
+typedReturningAll
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Int) _
+typedReturningAll = from usersTable # delete # where_ @"id = $id" # returningAll
 
 builderDelete :: String
 builderDelete = typedDelete # toSQL
@@ -415,7 +427,7 @@ integrationSpec conn = do
 
     it "inserts with RETURNING" do
       rows <- from usersTable
-        # insert { name: "Diana", email: "diana@example.com", age: Nothing }
+        # insert { name: "Diana", email: "diana@example.com" }
         # returning @"id, name, email"
         # runQuery conn {}
       Array.length rows `shouldEqual` 1
@@ -449,7 +461,7 @@ integrationSpec conn = do
   describe "Builder upsert execution" do
     it "ON CONFLICT DO NOTHING skips duplicate" do
       count <- from usersTable
-        # insert { name: "Duplicate", email: "bob@example.com", age: Nothing }
+        # insert { name: "Duplicate", email: "bob@example.com" }
         # onConflictDoNothing @"email"
         # runExecute conn {}
       count `shouldEqual` 0

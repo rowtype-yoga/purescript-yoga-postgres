@@ -19,7 +19,7 @@ import Data.Tuple.Nested (type (/\))
 import Effect.Aff (Aff)
 import Foreign (Foreign, unsafeToForeign)
 import Prim.Boolean (True, False)
-import Prim.Row (class Cons, class Lacks) as Row
+import Prim.Row (class Cons, class Lacks, class Union, class Nub) as Row
 import Prim.RowList as RL
 import Prim.RowList (class RowToList)
 import Prim.Symbol (class Cons, class Append) as Symbol
@@ -844,7 +844,7 @@ else instance FlushWhereWord "IS" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "NULL" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "LIKE" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "ILIKE" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "IN" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "IN" currentType cols paramsIn (Array currentType) paramsIn
 else instance FlushWhereWord "TRUE" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "FALSE" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "BETWEEN" currentType cols paramsIn currentType paramsIn
@@ -987,6 +987,25 @@ class InsertableColumnDecide isAuto name typ tail outRL | isAuto name typ tail -
 instance InsertableColumnsRL tail outRL => InsertableColumnDecide True name typ tail outRL
 instance InsertableColumnsRL tail outRL => InsertableColumnDecide False name typ tail (RL.Cons name typ outRL)
 
+-- Split insertable columns into required (non-Maybe) and optional (Maybe)
+class RequiredColumnsRL :: RL.RowList Type -> RL.RowList Type -> Constraint
+class RequiredColumnsRL rl out | rl -> out
+
+instance RequiredColumnsRL RL.Nil RL.Nil
+instance RequiredColumnsRL tail out => RequiredColumnsRL (RL.Cons name (Maybe a) tail) out
+else instance RequiredColumnsRL tail out => RequiredColumnsRL (RL.Cons name typ tail) (RL.Cons name typ out)
+
+-- Generate column names from a RowList
+class ColumnNamesRL :: RL.RowList Type -> Constraint
+class ColumnNamesRL rl where
+  columnNamesRL :: Proxy rl -> Array String
+
+instance ColumnNamesRL RL.Nil where
+  columnNamesRL _ = []
+
+instance (IsSymbol name, ColumnNamesRL tail) => ColumnNamesRL (RL.Cons name typ tail) where
+  columnNamesRL _ = [ reflectSymbol (Proxy :: Proxy name) ] <> columnNamesRL (Proxy :: Proxy tail)
+
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- RecordValuesRL: extract record values in RowList order
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1023,25 +1042,31 @@ instance
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 insert
-  :: forall name cols colsRL insertableRL insertRow stage stage'
+  :: forall name cols colsRL insertableRL insertable requiredRL required
+       userRow userRowRL stage stage'
    . RowToList cols colsRL
   => InsertableColumnsRL colsRL insertableRL
-  => ListToRow insertableRL insertRow
+  => ListToRow insertableRL insertable
+  => RequiredColumnsRL insertableRL requiredRL
+  => ListToRow requiredRL required
+  => Row.Union required userRow _
+  => Row.Union userRow insertable _
+  => RowToList userRow userRowRL
+  => ColumnNamesRL userRowRL
+  => RecordValuesRL userRowRL userRow
   => IsSymbol name
-  => InsertColumnsRL colsRL
-  => RecordValuesRL insertableRL insertRow
   => Row.Lacks "select" stage
   => Row.Lacks "insert" stage
   => Row.Lacks "set" stage
   => Row.Lacks "delete" stage
   => Row.Cons "insert" Unit stage stage'
-  => { | insertRow }
+  => { | userRow }
   -> Q name cols () () stage
   -> Q name cols () () stage'
 insert rec _ = Q { sql, values }
   where
   tableName = reflectSymbol (Proxy :: Proxy name)
-  colNames = insertColumnsRL (Proxy :: Proxy colsRL)
+  colNames = columnNamesRL (Proxy :: Proxy userRowRL)
   placeholders = colNames # mapWithIndex \i _ -> "$" <> show (i + 1)
   sql = "INSERT INTO " <> tableName
     <> " ("
@@ -1050,7 +1075,7 @@ insert rec _ = Q { sql, values }
     <> " VALUES ("
     <> intercalate ", " placeholders
     <> ")"
-  values = recordValuesRL (Proxy :: Proxy insertableRL) rec
+  values = recordValuesRL (Proxy :: Proxy userRowRL) rec
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- RETURNING clause
@@ -1066,6 +1091,16 @@ returning
   => Q name cols () p stage
   -> Q name cols result p stage'
 returning (Q q) = Q (q { sql = q.sql <> " RETURNING " <> reflectSymbol (Proxy :: Proxy sel) })
+
+returningAll
+  :: forall name cols result p stage stage'
+   . StripColumns cols result
+  => Row.Lacks "returning" stage
+  => Row.Lacks "select" stage
+  => Row.Cons "returning" Unit stage stage'
+  => Q name cols () p stage
+  -> Q name cols result p stage'
+returningAll (Q q) = Q (q { sql = q.sql <> " RETURNING *" })
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- UPDATE builder (SET)
@@ -1517,6 +1552,38 @@ runExecute conn params (Q q) = do
   let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
   let allValues = q.values <> values
   PG.execute (PG.SQL sql) allValues conn
+
+-- Transaction variants
+
+runQueryTx
+  :: forall name cols result params paramsRL stage
+   . RowToList params paramsRL
+  => ParamsToArray paramsRL params
+  => ReadForeign { | result }
+  => PG.Transaction
+  -> { | params }
+  -> Q name cols result params stage
+  -> Aff (Array { | result })
+runQueryTx txn params (Q q) = do
+  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
+  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
+  let allValues = q.values <> values
+  result <- PG.txQuery (PG.SQL sql) allValues txn
+  pure (unsafeDecodeRows result.rows)
+
+runExecuteTx
+  :: forall name cols params paramsRL stage
+   . RowToList params paramsRL
+  => ParamsToArray paramsRL params
+  => PG.Transaction
+  -> { | params }
+  -> Q name cols () params stage
+  -> Aff Int
+runExecuteTx txn params (Q q) = do
+  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
+  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
+  let allValues = q.values <> values
+  PG.txExecute (PG.SQL sql) allValues txn
 
 unsafeDecodeRows :: forall a. ReadForeign a => Array Foreign -> Array a
 unsafeDecodeRows = map unsafeDecodeRow
