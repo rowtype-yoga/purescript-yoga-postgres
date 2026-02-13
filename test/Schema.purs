@@ -45,10 +45,6 @@ ddl = createTableDDL @UsersTable
 -- Phase 3: Type-safe INSERT
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- Insert should require non-PK, non-default columns
--- PK columns (id) are omitted
--- Maybe columns (age) become optional
-
 insertSQL :: String
 insertSQL = insertSQLFor @UsersTable
 
@@ -99,15 +95,15 @@ eventsDDL :: String
 eventsDDL = createTableDDL @EventsTable
 
 typedJsonbWhere
-  :: Q "events" _ _ (metadata :: Jsonb) _
+  :: Q _ _ (metadata :: Jsonb) _
 typedJsonbWhere = from eventsTable # selectAll # where_ @"metadata @> $metadata"
 
 typedTitleLike
-  :: Q "events" _ _ (title :: String) _
+  :: Q _ _ (title :: String) _
 typedTitleLike = from eventsTable # selectAll # where_ @"title LIKE $title"
 
 typedArrayWhere
-  :: Q "events" _ _ (id :: Array Int) _
+  :: Q _ _ (id :: Array Int) _
 typedArrayWhere = from eventsTable # selectAll # where_ @"id = ANY($id)"
 
 testDateTime :: DateTime
@@ -142,45 +138,43 @@ deleteSQL = deleteSQLFor @UsersTable @(id :: Int)
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
--- Type annotations prove the compiler tracks result and param types
-
 typedSelectAll
-  :: Q "users" _
+  :: Q _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        ()
        _
 typedSelectAll = from usersTable # selectAll
 
 typedSelectCols
-  :: Q "users" _
+  :: Q _
        (name :: String, email :: String)
        ()
        _
 typedSelectCols = from usersTable # select @"name, email"
 
 typedSelectAlias
-  :: Q "users" _
+  :: Q _
        (name :: String, e :: String)
        ()
        _
 typedSelectAlias = from usersTable # select @"name, email AS e"
 
 typedWhere
-  :: Q "users" _
+  :: Q _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        (id :: Int)
        _
 typedWhere = from usersTable # selectAll # where_ @"id = $id"
 
 typedWhereComplex
-  :: Q "users" _
+  :: Q _
        (age :: Maybe Int, email :: String, id :: Int, name :: String)
        (name :: String, age :: Int)
        _
 typedWhereComplex = from usersTable # selectAll # where_ @"name = $name AND age > $age"
 
 typedSelectColsWhere
-  :: Q "users" _
+  :: Q _
        (name :: String)
        (age :: Int)
        _
@@ -209,36 +203,36 @@ builderWhereComplex = typedWhereComplex # toSQL
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 typedInsert
-  :: Q "users" _ () () _
+  :: Q _ () () _
 typedInsert = from usersTable # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
 
 typedInsertOptional
-  :: Q "users" _ () () _
+  :: Q _ () () _
 typedInsertOptional = from usersTable # insert { name: "Alice", email: "alice@example.com" }
 
 typedInsertReturning
-  :: Q "users" _ (id :: Int, name :: String) () _
+  :: Q _ (id :: Int, name :: String) () _
 typedInsertReturning = from usersTable
   # insert { name: "Alice", email: "alice@example.com" }
   # returning @"id, name"
 
 typedSet
-  :: Q "users" _ () () _
+  :: Q _ () () _
 typedSet = from usersTable # set { name: "Bob" }
 
 typedSetWhere
-  :: Q "users" _ () (id :: Int) _
+  :: Q _ () (id :: Int) _
 typedSetWhere = from usersTable # set { name: "Bob" } # where_ @"id = $id"
 
 typedSetReturning
-  :: Q "users" _ (id :: Int, name :: String, email :: String) (id :: Int) _
+  :: Q _ (id :: Int, name :: String, email :: String) (id :: Int) _
 typedSetReturning = from usersTable
   # set { name: "Bob" }
   # where_ @"id = $id"
   # returning @"id, name, email"
 
 typedUpsert
-  :: Q "users" _ () () _
+  :: Q _ () () _
 typedUpsert = from usersTable
   # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
   # onConflictDoNothing @"email"
@@ -259,31 +253,31 @@ builderUpsert :: String
 builderUpsert = typedUpsert # toSQL
 
 typedDelete
-  :: Q "users" _ () (id :: Int) _
+  :: Q _ () (id :: Int) _
 typedDelete = from usersTable # delete # where_ @"id = $id"
 
 typedDeleteReturning
-  :: Q "users" _ (name :: String, email :: String) (id :: Int) _
+  :: Q _ (name :: String, email :: String) (id :: Int) _
 typedDeleteReturning = from usersTable # delete # where_ @"id = $id" # returning @"name, email"
 
 typedOrderBy
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
+  :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedOrderBy = from usersTable # selectAll # orderBy @"name"
 
 typedOrderByDesc
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
+  :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedOrderByDesc = from usersTable # selectAll # orderBy @"name DESC, age ASC"
 
 typedLimitOffset
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
+  :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
 typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit 10 # offset 5
 
 typedInArray
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Array Int) _
+  :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Array Int) _
 typedInArray = from usersTable # selectAll # where_ @"id IN $id"
 
 typedReturningAll
-  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Int) _
+  :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Int) _
 typedReturningAll = from usersTable # delete # where_ @"id = $id" # returningAll
 
 builderDelete :: String
@@ -350,72 +344,66 @@ commentsTable :: Proxy CommentsTable
 commentsTable = Proxy
 
 typedInnerJoin
-  :: JQ
-       ( users :: (id :: Column Int (PrimaryKey /\ AutoIncrement), name :: Column String None, email :: Column String Unique, age :: Column (Maybe Int) None)
-       , posts :: (id :: Column Int (PrimaryKey /\ AutoIncrement), title :: Column String None, body :: Column String None, user_id :: Column Int None)
-       )
-       (name :: String, title :: String)
-       (age :: Int)
-       _
+  :: Q _ (name :: String, title :: String) (age :: Int) _
 typedInnerJoin = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"users.name, posts.title"
-  # whereJQ @"users.age > $age"
+  # select @"users.name, posts.title"
+  # where_ @"users.age > $age"
 
 typedInnerJoinSQL :: String
-typedInnerJoinSQL = typedInnerJoin # toSQLJQ
+typedInnerJoinSQL = typedInnerJoin # toSQL
 
 typedInnerJoinAlias
-  :: JQ _ (user_name :: String, post_title :: String) () _
+  :: Q _ (user_name :: String, post_title :: String) () _
 typedInnerJoinAlias = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"users.name AS user_name, posts.title AS post_title"
+  # select @"users.name AS user_name, posts.title AS post_title"
 
 typedLeftJoin
-  :: JQ _ (name :: String, title :: Maybe String) () _
+  :: Q _ (name :: String, title :: Maybe String) () _
 typedLeftJoin = from usersTable
   # leftJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"users.name, posts.title"
+  # select @"users.name, posts.title"
 
 typedLeftJoinSQL :: String
-typedLeftJoinSQL = typedLeftJoin # toSQLJQ
+typedLeftJoinSQL = typedLeftJoin # toSQL
 
 typedJoinOrderBy
-  :: JQ _ (name :: String, title :: String) () _
+  :: Q _ (name :: String, title :: String) () _
 typedJoinOrderBy = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"users.name, posts.title"
-  # orderByJQ @"users.name ASC"
+  # select @"users.name, posts.title"
+  # orderBy @"users.name ASC"
 
 typedJoinLimitOffset
-  :: JQ _ (name :: String, title :: String) () _
+  :: Q _ (name :: String, title :: String) () _
 typedJoinLimitOffset = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"users.name, posts.title"
-  # orderByJQ @"users.name"
-  # limitJQ 10
-  # offsetJQ 5
+  # select @"users.name, posts.title"
+  # orderBy @"users.name"
+  # limit 10
+  # offset 5
 
 typedUnqualifiedSelect
-  :: JQ _ (title :: String, name :: String) () _
+  :: Q _ (title :: String, name :: String) () _
 typedUnqualifiedSelect = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"title, name"
+  # select @"title, name"
 
 typedMultiJoin
-  :: JQ _ (name :: String, title :: String, text :: String) () _
+  :: Q _ (name :: String, title :: String, text :: String) () _
 typedMultiJoin = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # innerJoinJQ @"posts.id = comments.post_id" commentsTable
-  # selectJQ @"users.name, posts.title, comments.text"
+  # innerJoin @"posts.id = comments.post_id" commentsTable
+  # select @"users.name, posts.title, comments.text"
 
 joinQueryExecution :: PG.Connection -> Aff (Array { name :: String, title :: String })
 joinQueryExecution conn =
   from usersTable
     # innerJoin @"users.id = posts.user_id" postsTable
-    # selectJQ @"users.name, posts.title"
-    # whereJQ @"users.age > $age"
-    # runQueryJQ conn { age: 25 }
+    # select @"users.name, posts.title"
+    # where_ @"users.age > $age"
+    # runQuery conn { age: 25 }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -522,13 +510,13 @@ spec = do
       it "builds LEFT JOIN" do
         typedLeftJoinSQL `shouldEqual` "SELECT users.name, posts.title FROM users LEFT JOIN posts ON users.id = posts.user_id"
       it "builds JOIN with ORDER BY, LIMIT, OFFSET" do
-        let sql = typedJoinLimitOffset # toSQLJQ
+        let sql = typedJoinLimitOffset # toSQL
         sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
         sql `shouldSatisfy` contains (Pattern "ORDER BY users.name")
         sql `shouldSatisfy` contains (Pattern "LIMIT 10")
         sql `shouldSatisfy` contains (Pattern "OFFSET 5")
       it "builds multi-way JOIN" do
-        let sql = typedMultiJoin # toSQLJQ
+        let sql = typedMultiJoin # toSQL
         sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
         sql `shouldSatisfy` contains (Pattern "INNER JOIN comments ON")
 
@@ -740,8 +728,8 @@ integrationSpec conn = do
     it "INNER JOIN returns matching rows" do
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name, posts.title"
-        # runQueryJQ conn {}
+        # select @"users.name, posts.title"
+        # runQuery conn {}
       Array.length rows `shouldEqual` 2
       (map _.name rows) `shouldSatisfy` Array.elem "Alice"
       (map _.title rows) `shouldSatisfy` Array.elem "Alice's Post"
@@ -749,9 +737,9 @@ integrationSpec conn = do
     it "INNER JOIN with WHERE filters correctly" do
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name, posts.title"
-        # whereJQ @"users.age > $age"
-        # runQueryJQ conn { age: 25 }
+        # select @"users.name, posts.title"
+        # where_ @"users.age > $age"
+        # runQuery conn { age: 25 }
       Array.length rows `shouldEqual` 1
       (map _.name rows) `shouldEqual` [ "Bob" ]
       (map _.title rows) `shouldEqual` [ "Bob's Post" ]
@@ -759,8 +747,8 @@ integrationSpec conn = do
     it "INNER JOIN with aliases" do
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name AS author, posts.title AS post_title"
-        # runQueryJQ conn {}
+        # select @"users.name AS author, posts.title AS post_title"
+        # runQuery conn {}
       Array.length rows `shouldEqual` 2
       (map _.author rows) `shouldSatisfy` Array.elem "Alice"
       (map _.post_title rows) `shouldSatisfy` Array.elem "Bob's Post"
@@ -768,10 +756,10 @@ integrationSpec conn = do
     it "INNER JOIN with ORDER BY and LIMIT" do
       rows <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name, posts.title"
-        # orderByJQ @"users.name ASC"
-        # limitJQ 1
-        # runQueryJQ conn {}
+        # select @"users.name, posts.title"
+        # orderBy @"users.name ASC"
+        # limit 1
+        # runQuery conn {}
       Array.length rows `shouldEqual` 1
       (map _.name rows) `shouldEqual` [ "Alice" ]
 
@@ -781,9 +769,9 @@ integrationSpec conn = do
         conn
       rows <- from usersTable
         # leftJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name, posts.title"
-        # orderByJQ @"users.name ASC"
-        # runQueryJQ conn {}
+        # select @"users.name, posts.title"
+        # orderBy @"users.name ASC"
+        # runQuery conn {}
       Array.length rows `shouldSatisfy` (_ >= 3)
       let noPostRow = Array.find (\r -> r.name == "NoPost") rows
       case noPostRow of
@@ -794,12 +782,12 @@ integrationSpec conn = do
         conn
       pure unit
 
-    it "runQueryOneJQ returns Just for match" do
+    it "runQueryOne returns Just for match" do
       result <- from usersTable
         # innerJoin @"users.id = posts.user_id" postsTable
-        # selectJQ @"users.name, posts.title"
-        # whereJQ @"users.name = $name"
-        # runQueryOneJQ conn { name: "Alice" }
+        # select @"users.name, posts.title"
+        # where_ @"users.name = $name"
+        # runQueryOne conn { name: "Alice" }
       case result of
         Just r -> r.title `shouldEqual` "Alice's Post"
         Nothing -> shouldEqual "found" "nothing"

@@ -1,4 +1,4 @@
--- EXPECT: TypesDoNotUnify
+-- EXPECT: NoInstanceFound
 module Test.CompileFail.InvalidColumnInSelect where
 
 import Prelude

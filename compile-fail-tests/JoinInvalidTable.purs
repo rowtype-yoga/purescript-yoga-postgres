@@ -26,4 +26,4 @@ postsTable = Proxy
 
 bad = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
-  # selectJQ @"nonexistent_table.name"
+  # select @"nonexistent_table.name"

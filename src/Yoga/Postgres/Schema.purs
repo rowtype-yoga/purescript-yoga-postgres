@@ -87,7 +87,7 @@ else instance IsNullable a where
   isNullable _ = false
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- PureScript type → Postgres type name
+-- PureScript type -> Postgres type name
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class PGTypeName a where
@@ -121,7 +121,7 @@ instance PGTypeName a => PGTypeName (Maybe a) where
   pgTypeName _ = pgTypeName (Proxy :: Proxy a)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Constraint → DDL fragment
+-- Constraint -> DDL fragment
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class RenderConstraint a where
@@ -358,204 +358,31 @@ instance
     "DELETE FROM " <> tableName <> " WHERE " <> intercalate " AND " conditions
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Builder-style query API
+-- Utility type classes
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- Type-level WHERE clause validation
--- Parses SQL-like syntax, extracts identifiers, validates them as column names
---
--- Recognises:
---   column names  → validated against the table row
---   $N            → parameter placeholders, skipped
---   AND OR NOT IS NULL LIKE IN TRUE FALSE → SQL keywords, skipped
---   = > < >= <= != <> → operators, skipped
---   ( ) , digits  → punctuation, skipped
+class UnwrapMaybe :: Type -> Type -> Constraint
+class UnwrapMaybe a b | a -> b
 
--- Top-level: walk the Symbol, extract words, validate column-like words
-class ValidateWhere :: Symbol -> Row Type -> Constraint
-class ValidateWhere sym cols
+instance UnwrapMaybe (Maybe a) a
+else instance UnwrapMaybe a a
 
-instance ValidateWhere "" cols
+-- Skip leading spaces
+class SkipSpaces :: Symbol -> Symbol -> Constraint
+class SkipSpaces sym result | sym -> result
+
+instance SkipSpaces "" ""
 else instance
-  ( Symbol.Cons h t sym
-  , ValidateWhereGo h t "" cols
+  ( Symbol.Cons head tail sym
+  , SkipSpacesGo head tail result
   ) =>
-  ValidateWhere sym cols
+  SkipSpaces sym result
 
--- Walk character by character, accumulating words
-class ValidateWhereGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
-class ValidateWhereGo head tail acc cols
+class SkipSpacesGo :: Symbol -> Symbol -> Symbol -> Constraint
+class SkipSpacesGo head tail result | head tail -> result
 
--- Space: flush accumulated word, continue
-instance
-  ( FlushWord acc cols
-  , SkipSpaces tail rest
-  , ValidateWhere rest cols
-  ) =>
-  ValidateWhereGo " " tail acc cols
-
--- Operators and punctuation: flush word, skip char, continue
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "=" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ">" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "<" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "!" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "(" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ")" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "," tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "'" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "@" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "?" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ":" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "~" tail acc cols
-else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "#" tail acc cols
-
--- End of string: flush final word
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushWord acc' cols
-  ) =>
-  ValidateWhereGo h "" acc cols
-
--- Regular character: accumulate and continue
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ValidateWhereGo nextH nextT acc' cols
-  ) =>
-  ValidateWhereGo h tail acc cols
-
--- Flush a word: if it looks like a column name, validate it; otherwise skip
-class FlushWord :: Symbol -> Row Type -> Constraint
-class FlushWord word cols
-
--- Empty accumulator: nothing to validate
-instance FlushWord "" cols
-
--- $-prefixed: parameter placeholder, skip
-else instance FlushWord "$" cols
-
--- SQL keywords: skip
-else instance FlushWord "AND" cols
-else instance FlushWord "OR" cols
-else instance FlushWord "NOT" cols
-else instance FlushWord "IS" cols
-else instance FlushWord "NULL" cols
-else instance FlushWord "LIKE" cols
-else instance FlushWord "ILIKE" cols
-else instance FlushWord "IN" cols
-else instance FlushWord "TRUE" cols
-else instance FlushWord "FALSE" cols
-else instance FlushWord "BETWEEN" cols
-else instance FlushWord "ANY" cols
-else instance FlushWord "ALL" cols
-
--- Non-keyword: check first character to decide
-else instance
-  ( Symbol.Cons head rest word
-  , FlushWordByHead head word cols
-  ) =>
-  FlushWord word cols
-
--- Branch on first character of the word
-class FlushWordByHead :: Symbol -> Symbol -> Row Type -> Constraint
-class FlushWordByHead head word cols
-
--- $-prefixed: parameter placeholder, skip
-instance FlushWordByHead "$" word cols
--- Digit-prefixed: number literal, skip
-else instance FlushWordByHead "0" word cols
-else instance FlushWordByHead "1" word cols
-else instance FlushWordByHead "2" word cols
-else instance FlushWordByHead "3" word cols
-else instance FlushWordByHead "4" word cols
-else instance FlushWordByHead "5" word cols
-else instance FlushWordByHead "6" word cols
-else instance FlushWordByHead "7" word cols
-else instance FlushWordByHead "8" word cols
-else instance FlushWordByHead "9" word cols
-
--- Anything else: must be a column name
-else instance Row.Cons word typ rest cols => FlushWordByHead head word cols
-
-else instance
-  Fail (Beside (Beside (Text "Column ") (Quote word)) (Text " does not exist in the table")) =>
-  FlushWordByHead head word cols
-
--- Also validate comma-separated column lists (for select)
-class ValidateColumns :: Symbol -> Row Type -> Constraint
-class ValidateColumns sym cols
-
-instance ValidateColumns "" cols
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateColumnsGo h t "" cols
-  ) =>
-  ValidateColumns sym cols
-
-class ValidateColumnsGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
-class ValidateColumnsGo head tail acc cols
-
--- Comma: flush name, continue
-instance
-  ( FlushWord acc cols
-  , SkipSpaces tail rest
-  , ValidateColumns rest cols
-  ) =>
-  ValidateColumnsGo "," tail acc cols
-
--- Space: flush name, skip to comma or end
-else instance
-  ( SkipSpaces tail rest
-  , ValidateAfterName acc rest cols
-  ) =>
-  ValidateColumnsGo " " tail acc cols
-
--- End of string: flush final name
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushWord acc' cols
-  ) =>
-  ValidateColumnsGo h "" acc cols
-
--- Regular char: accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ValidateColumnsGo nextH nextT acc' cols
-  ) =>
-  ValidateColumnsGo h tail acc cols
-
-class ValidateAfterName :: Symbol -> Symbol -> Row Type -> Constraint
-class ValidateAfterName acc rest cols
-
--- End of input
-instance FlushWord acc cols => ValidateAfterName acc "" cols
-
--- Non-empty: branch on first character
-else instance
-  ( FlushWord acc cols
-  , Symbol.Cons h t rest
-  , ValidateAfterNameByHead h t cols
-  ) =>
-  ValidateAfterName acc rest cols
-
-class ValidateAfterNameByHead :: Symbol -> Symbol -> Row Type -> Constraint
-class ValidateAfterNameByHead head tail cols
-
--- Comma: done with this column, continue
-instance
-  ( SkipSpaces tail rest
-  , ValidateColumns rest cols
-  ) =>
-  ValidateAfterNameByHead "," tail cols
-
--- Anything else (e.g. "AS ..."): extract the word and handle
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , HandleAfterColumnWord word afterWord cols
-  ) =>
-  ValidateAfterNameByHead h t cols
+instance SkipSpaces tail result => SkipSpacesGo " " tail result
+else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
 
 -- Extract the first word from a Symbol (up to space or end)
 class ExtractWord :: Symbol -> Symbol -> Symbol -> Constraint
@@ -585,15 +412,671 @@ else instance
   ) =>
   ExtractWordGo h tail acc word rest
 
--- After a column name + space + word: if AS, skip alias; otherwise error
+-- StripColumns: (name :: Column String None, ...) -> (name :: String, ...)
+class StripColumnsRL :: RL.RowList Type -> RL.RowList Type -> Constraint
+class StripColumnsRL rl out | rl -> out
+
+instance StripColumnsRL RL.Nil RL.Nil
+instance StripColumnsRL tail out' => StripColumnsRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name typ out')
+
+class StripColumns :: Row Type -> Row Type -> Constraint
+class StripColumns cols result | cols -> result
+
+instance (RowToList cols rl, StripColumnsRL rl outRL, ListToRow outRL result) => StripColumns cols result
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- SingleTable: extract name and cols from a single-entry tables row
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class SingleTable :: Row (Row Type) -> Symbol -> Row Type -> Constraint
+class SingleTable tables name cols | tables -> name cols
+
+instance
+  ( RowToList tables (RL.Cons name cols RL.Nil)
+  , IsSymbol name
+  ) =>
+  SingleTable tables name cols
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- SplitOnDot: "users.id" -> ("users", "id"); "name" -> unqualified
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class SplitOnDot :: Symbol -> Boolean -> Symbol -> Symbol -> Constraint
+class SplitOnDot sym hasDot table col | sym -> hasDot table col
+
+instance
+  ( Symbol.Cons h t sym
+  , SplitOnDotGo h t "" hasDot table col
+  ) =>
+  SplitOnDot sym hasDot table col
+
+class SplitOnDotGo :: Symbol -> Symbol -> Symbol -> Boolean -> Symbol -> Symbol -> Constraint
+class SplitOnDotGo head tail acc hasDot table col | head tail acc -> hasDot table col
+
+-- Found dot: acc is table, rest is column
+instance SplitOnDotGo "." tail acc True acc tail
+
+-- End of string without dot: unqualified
+else instance
+  ( Symbol.Append acc h col
+  ) =>
+  SplitOnDotGo h "" acc False "" col
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , SplitOnDotGo nextH nextT acc' hasDot table col
+  ) =>
+  SplitOnDotGo h tail acc hasDot table col
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ResolveColumn: look up a column (qualified or unqualified) in tables
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ResolveColumn :: Symbol -> Row (Row Type) -> Type -> Constraint
+class ResolveColumn word tables typ | word tables -> typ
+
+instance
+  ( SplitOnDot word hasDot table col
+  , ResolveColumnBranch hasDot table col tables typ
+  ) =>
+  ResolveColumn word tables typ
+
+class ResolveColumnBranch :: Boolean -> Symbol -> Symbol -> Row (Row Type) -> Type -> Constraint
+class ResolveColumnBranch hasDot table col tables typ | hasDot table col tables -> typ
+
+-- Qualified: has dot
+instance
+  ( Row.Cons table tableCols restTables tables
+  , Row.Cons col typ restCols tableCols
+  ) =>
+  ResolveColumnBranch True table col tables typ
+
+-- Unqualified: no dot
+else instance
+  ( RowToList tables tablesRL
+  , FindUnqualifiedColumn col tablesRL typ
+  ) =>
+  ResolveColumnBranch False table col tables typ
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- FindUnqualifiedColumn: search all tables for a column name
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class FindUnqualifiedColumn :: Symbol -> RL.RowList (Row Type) -> Type -> Constraint
+class FindUnqualifiedColumn col tablesRL typ | col tablesRL -> typ
+
+instance
+  ( Fail (Beside (Text "Column ") (Beside (Quote col) (Text " not found in any table")))
+  ) =>
+  FindUnqualifiedColumn col RL.Nil typ
+
+instance
+  ( RowToList tableCols colsRL
+  , HasColumnRL col colsRL found
+  , FindUnqualifiedColumnDecide found col tableName tableCols tailTables typ
+  ) =>
+  FindUnqualifiedColumn col (RL.Cons tableName tableCols tailTables) typ
+
+class HasColumnRL :: Symbol -> RL.RowList Type -> Boolean -> Constraint
+class HasColumnRL col rl found | col rl -> found
+
+instance HasColumnRL col RL.Nil False
+instance HasColumnRL col (RL.Cons col typ tail) True
+else instance HasColumnRL col tail found => HasColumnRL col (RL.Cons name typ tail) found
+
+class FindUnqualifiedColumnDecide :: Boolean -> Symbol -> Symbol -> Row Type -> RL.RowList (Row Type) -> Type -> Constraint
+class FindUnqualifiedColumnDecide found col tableName tableCols restTables typ | found col tableName tableCols restTables -> typ
+
+-- Found in this table: verify it's not in remaining tables
+instance
+  ( Row.Cons col typ restCols tableCols
+  , AssertNotInRemainingTables col restTables
+  ) =>
+  FindUnqualifiedColumnDecide True col tableName tableCols restTables typ
+
+-- Not found in this table: keep searching
+instance
+  FindUnqualifiedColumn col restTables typ =>
+  FindUnqualifiedColumnDecide False col tableName tableCols restTables typ
+
+class AssertNotInRemainingTables :: Symbol -> RL.RowList (Row Type) -> Constraint
+class AssertNotInRemainingTables col tablesRL
+
+instance AssertNotInRemainingTables col RL.Nil
+instance
+  ( RowToList tableCols colsRL
+  , HasColumnRL col colsRL found
+  , AssertNotAmbiguous found col tableName
+  , AssertNotInRemainingTables col tail
+  ) =>
+  AssertNotInRemainingTables col (RL.Cons tableName tableCols tail)
+
+class AssertNotAmbiguous :: Boolean -> Symbol -> Symbol -> Constraint
+class AssertNotAmbiguous found col tableName
+
+instance AssertNotAmbiguous False col tableName
+instance
+  ( Fail (Beside (Text "Column ") (Beside (Quote col) (Text " is ambiguous - qualify with table name")))
+  ) =>
+  AssertNotAmbiguous True col tableName
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ParseSelect: parse "users.name, posts.title AS t" against tables
+-- Result labels: column name (after dot) or explicit AS alias
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ParseSelect :: Symbol -> Row (Row Type) -> Row Type -> Constraint
+class ParseSelect sym tables result | sym tables -> result
+
+instance ParseSelect "" tables ()
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectGo h t "" tables RL.Nil outRL
+  , ListToRow outRL result
+  ) =>
+  ParseSelect sym tables result
+
+class ParseSelectGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectGo head tail acc tables accRL outRL | head tail acc tables accRL -> outRL
+
+-- Comma: emit column, continue
+instance
+  ( ResolveColumn acc tables (Column typ constraints)
+  , SplitOnDot acc _hasDot _table colName
+  , SkipSpaces tail rest
+  , ParseSelectContinue rest tables (RL.Cons colName typ accRL) outRL
+  ) =>
+  ParseSelectGo "," tail acc tables accRL outRL
+
+-- Space: column reference done, check for AS or comma
+else instance
+  ( SkipSpaces tail rest
+  , ParseSelectAfterCol acc rest tables accRL outRL
+  ) =>
+  ParseSelectGo " " tail acc tables accRL outRL
+
+-- End of string: emit final column
+else instance
+  ( Symbol.Append acc h acc'
+  , ResolveColumn acc' tables (Column typ constraints)
+  , SplitOnDot acc' _hasDot _table colName
+  ) =>
+  ParseSelectGo h "" acc tables accRL (RL.Cons colName typ accRL)
+
+-- Regular char (including dot): accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ParseSelectGo nextH nextT acc' tables accRL outRL
+  ) =>
+  ParseSelectGo h tail acc tables accRL outRL
+
+-- After column name + space: AS alias, comma, or end
+class ParseSelectAfterCol :: Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectAfterCol colRef rest tables accRL outRL | colRef rest tables accRL -> outRL
+
+-- End: emit column with default label (column name after dot)
+instance
+  ( ResolveColumn colRef tables (Column typ constraints)
+  , SplitOnDot colRef _hasDot _table colName
+  ) =>
+  ParseSelectAfterCol colRef "" tables accRL (RL.Cons colName typ accRL)
+
+-- Non-empty: branch on first char
+else instance
+  ( Symbol.Cons h t rest
+  , ParseSelectAfterColByHead h t colRef tables accRL outRL
+  ) =>
+  ParseSelectAfterCol colRef rest tables accRL outRL
+
+class ParseSelectAfterColByHead :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectAfterColByHead head tail colRef tables accRL outRL | head tail colRef tables accRL -> outRL
+
+-- Comma: emit column with default label, continue
+instance
+  ( ResolveColumn colRef tables (Column typ constraints)
+  , SplitOnDot colRef _hasDot _table colName
+  , SkipSpaces tail rest
+  , ParseSelectContinue rest tables (RL.Cons colName typ accRL) outRL
+  ) =>
+  ParseSelectAfterColByHead "," tail colRef tables accRL outRL
+
+-- Otherwise (AS ...): extract word
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest keyword afterKeyword
+  , ParseSelectHandleAS keyword afterKeyword colRef tables accRL outRL
+  ) =>
+  ParseSelectAfterColByHead h t colRef tables accRL outRL
+
+class ParseSelectHandleAS :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectHandleAS keyword afterKeyword colRef tables accRL outRL | keyword afterKeyword colRef tables accRL -> outRL
+
+instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , ResolveColumn colRef tables (Column typ constraints)
+  , SkipSpaces afterAlias rest
+  , ParseSelectExpectEnd rest tables (RL.Cons alias typ accRL) outRL
+  ) =>
+  ParseSelectHandleAS "AS" afterKeyword colRef tables accRL outRL
+
+else instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , ResolveColumn colRef tables (Column typ constraints)
+  , SkipSpaces afterAlias rest
+  , ParseSelectExpectEnd rest tables (RL.Cons alias typ accRL) outRL
+  ) =>
+  ParseSelectHandleAS "as" afterKeyword colRef tables accRL outRL
+
+class ParseSelectExpectEnd :: Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectExpectEnd sym tables accRL outRL | sym tables accRL -> outRL
+
+instance ParseSelectExpectEnd "" tables accRL accRL
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectExpectEndByHead h t tables accRL outRL
+  ) =>
+  ParseSelectExpectEnd sym tables accRL outRL
+
+class ParseSelectExpectEndByHead :: Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectExpectEndByHead head tail tables accRL outRL | head tail tables accRL -> outRL
+
+instance
+  ( SkipSpaces tail rest
+  , ParseSelectContinue rest tables accRL outRL
+  ) =>
+  ParseSelectExpectEndByHead "," tail tables accRL outRL
+
+class ParseSelectContinue :: Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectContinue sym tables accRL outRL | sym tables accRL -> outRL
+
+instance ParseSelectContinue "" tables accRL accRL
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectGo h t "" tables accRL outRL
+  ) =>
+  ParseSelectContinue sym tables accRL outRL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ParseWhere: parse "id = $id AND age > $age" -> params
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+data NoType
+
+class ParseWhere :: Symbol -> Row (Row Type) -> Row Type -> Constraint
+class ParseWhere sym tables params | sym tables -> params
+
+instance ParseWhere "" tables ()
+else instance
+  ( Symbol.Cons h t sym
+  , ParseWhereGo h t "" NoType tables RL.Nil outRL
+  , ListToRow outRL params
+  ) =>
+  ParseWhere sym tables params
+
+class ParseWhereGo :: Symbol -> Symbol -> Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseWhereGo head tail acc currentType tables paramsIn paramsOut | head tail acc currentType tables paramsIn -> paramsOut
+
+-- Space: flush word, continue
+instance
+  ( FlushWhereWord acc currentType tables paramsIn currentType' paramsOut'
+  , SkipSpaces tail rest
+  , ParseWhereContinue rest currentType' tables paramsOut' paramsOut
+  ) =>
+  ParseWhereGo " " tail acc currentType tables paramsIn paramsOut
+
+-- Operators
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "=" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ">" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "<" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "!" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "(" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ")" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "'" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "@" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "?" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ":" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "~" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "#" tail acc currentType tables paramsIn paramsOut
+
+-- End of string: flush final word
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushWhereWord acc' currentType tables paramsIn _ct paramsOut
+  ) =>
+  ParseWhereGo h "" acc currentType tables paramsIn paramsOut
+
+-- Regular char (including dot): accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ParseWhereGo nextH nextT acc' currentType tables paramsIn paramsOut
+  ) =>
+  ParseWhereGo h tail acc currentType tables paramsIn paramsOut
+
+class ParseWhereContinue :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseWhereContinue sym currentType tables paramsIn paramsOut | sym currentType tables paramsIn -> paramsOut
+
+instance ParseWhereContinue "" currentType tables paramsIn paramsIn
+else instance
+  ( Symbol.Cons h t sym
+  , ParseWhereGo h t "" currentType tables paramsIn paramsOut
+  ) =>
+  ParseWhereContinue sym currentType tables paramsIn paramsOut
+
+-- Flush a word in WHERE context
+class FlushWhereWord :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWord word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWord "" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "AND" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "OR" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "NOT" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "IS" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "NULL" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "LIKE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "ILIKE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "IN" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "TRUE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "FALSE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "BETWEEN" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "ANY" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "ALL" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "CAST" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "AS" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "EXISTS" currentType tables paramsIn currentType paramsIn
+-- Postgres type names (for ::type casts)
+else instance FlushWhereWord "text" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "integer" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "bigint" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "boolean" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "jsonb" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "json" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "timestamptz" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "timestamp" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "date" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "int" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "varchar" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "uuid" currentType tables paramsIn currentType paramsIn
+-- Non-keyword: check first char
+else instance
+  ( Symbol.Cons head rest word
+  , FlushWhereWordByHead head word currentType tables paramsIn currentTypeOut paramsOut
+  ) =>
+  FlushWhereWord word currentType tables paramsIn currentTypeOut paramsOut
+
+class FlushWhereWordByHead :: Symbol -> Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordByHead head word currentType tables paramsIn currentTypeOut paramsOut | head word currentType tables paramsIn -> currentTypeOut paramsOut
+
+-- $param: emit with currentType
+instance
+  ( Symbol.Cons "$" paramName word
+  ) =>
+  FlushWhereWordByHead "$" word currentType tables paramsIn currentType (RL.Cons paramName currentType paramsIn)
+
+-- Digit: number literal, pass through
+else instance FlushWhereWordByHead "0" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "1" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "2" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "3" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "4" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "5" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "6" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "7" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "8" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "9" word currentType tables paramsIn currentType paramsIn
+
+-- Column reference: resolve and set as currentType
+else instance
+  ( ResolveColumn word tables (Column typ constraints)
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordByHead head word currentType tables paramsIn unwrapped paramsIn
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ValidateOrderBy: validate ORDER BY with qualified column support
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ValidateOrderBy :: Symbol -> Row (Row Type) -> Constraint
+class ValidateOrderBy sym tables
+
+instance ValidateOrderBy "" tables
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateOrderByGo h t "" tables
+  ) =>
+  ValidateOrderBy sym tables
+
+class ValidateOrderByGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidateOrderByGo head tail acc tables
+
+-- Comma: flush column, continue
+instance
+  ( FlushOrderByWord acc tables
+  , SkipSpaces tail rest
+  , ValidateOrderBy rest tables
+  ) =>
+  ValidateOrderByGo "," tail acc tables
+
+-- Space: flush column, skip modifiers
+else instance
+  ( SkipSpaces tail rest
+  , FlushOrderByThenSkip acc rest tables
+  ) =>
+  ValidateOrderByGo " " tail acc tables
+
+-- End of string: flush final column
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushOrderByWord acc' tables
+  ) =>
+  ValidateOrderByGo h "" acc tables
+
+-- Regular char (including dot): accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateOrderByGo nextH nextT acc' tables
+  ) =>
+  ValidateOrderByGo h tail acc tables
+
+class FlushOrderByWord :: Symbol -> Row (Row Type) -> Constraint
+class FlushOrderByWord word tables
+
+instance FlushOrderByWord "" tables
+else instance FlushOrderByWord "ASC" tables
+else instance FlushOrderByWord "asc" tables
+else instance FlushOrderByWord "DESC" tables
+else instance FlushOrderByWord "desc" tables
+else instance FlushOrderByWord "NULLS" tables
+else instance FlushOrderByWord "FIRST" tables
+else instance FlushOrderByWord "LAST" tables
+else instance ResolveColumn word tables typ => FlushOrderByWord word tables
+
+class FlushOrderByThenSkip :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class FlushOrderByThenSkip colName rest tables
+
+instance FlushOrderByWord colName tables => FlushOrderByThenSkip colName "" tables
+else instance
+  ( FlushOrderByWord colName tables
+  , Symbol.Cons h t rest
+  , FlushOrderByThenSkipByHead h t tables
+  ) =>
+  FlushOrderByThenSkip colName rest tables
+
+class FlushOrderByThenSkipByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class FlushOrderByThenSkipByHead head tail tables
+
+-- Comma: continue with next column
+instance
+  ( SkipSpaces tail rest
+  , ValidateOrderBy rest tables
+  ) =>
+  FlushOrderByThenSkipByHead "," tail tables
+
+-- Modifier word: consume it, continue
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWord word tables
+  , SkipSpaces afterWord rest'
+  , ValidateOrderByContinue rest' tables
+  ) =>
+  FlushOrderByThenSkipByHead h t tables
+
+class ValidateOrderByContinue :: Symbol -> Row (Row Type) -> Constraint
+class ValidateOrderByContinue sym tables
+
+instance ValidateOrderByContinue "" tables
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateOrderByContinueByHead h t tables
+  ) =>
+  ValidateOrderByContinue sym tables
+
+class ValidateOrderByContinueByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidateOrderByContinueByHead head tail tables
+
+instance
+  ( SkipSpaces tail rest
+  , ValidateOrderBy rest tables
+  ) =>
+  ValidateOrderByContinueByHead "," tail tables
+
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWord word tables
+  , SkipSpaces afterWord rest'
+  , ValidateOrderByContinue rest' tables
+  ) =>
+  ValidateOrderByContinueByHead h t tables
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ValidateColumns: comma-separated column names (for ON CONFLICT target)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ValidateColumns :: Symbol -> Row Type -> Constraint
+class ValidateColumns sym cols
+
+instance ValidateColumns "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateColumnsGo h t "" cols
+  ) =>
+  ValidateColumns sym cols
+
+class ValidateColumnsGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
+class ValidateColumnsGo head tail acc cols
+
+-- Comma: flush name, continue
+instance
+  ( FlushColumnWord acc cols
+  , SkipSpaces tail rest
+  , ValidateColumns rest cols
+  ) =>
+  ValidateColumnsGo "," tail acc cols
+
+-- Space: flush name, skip to comma or end
+else instance
+  ( SkipSpaces tail rest
+  , ValidateAfterName acc rest cols
+  ) =>
+  ValidateColumnsGo " " tail acc cols
+
+-- End of string: flush final name
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushColumnWord acc' cols
+  ) =>
+  ValidateColumnsGo h "" acc cols
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateColumnsGo nextH nextT acc' cols
+  ) =>
+  ValidateColumnsGo h tail acc cols
+
+class FlushColumnWord :: Symbol -> Row Type -> Constraint
+class FlushColumnWord word cols
+
+instance FlushColumnWord "" cols
+else instance FlushColumnWord "$" cols
+else instance FlushColumnWord "AND" cols
+else instance FlushColumnWord "OR" cols
+else instance FlushColumnWord "NOT" cols
+else instance FlushColumnWord "IS" cols
+else instance FlushColumnWord "NULL" cols
+else instance FlushColumnWord "LIKE" cols
+else instance FlushColumnWord "ILIKE" cols
+else instance FlushColumnWord "IN" cols
+else instance FlushColumnWord "TRUE" cols
+else instance FlushColumnWord "FALSE" cols
+else instance FlushColumnWord "BETWEEN" cols
+else instance FlushColumnWord "ANY" cols
+else instance FlushColumnWord "ALL" cols
+else instance
+  ( Symbol.Cons head rest word
+  , FlushColumnWordByHead head word cols
+  ) =>
+  FlushColumnWord word cols
+
+class FlushColumnWordByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushColumnWordByHead head word cols
+
+instance FlushColumnWordByHead "$" word cols
+else instance FlushColumnWordByHead "0" word cols
+else instance FlushColumnWordByHead "1" word cols
+else instance FlushColumnWordByHead "2" word cols
+else instance FlushColumnWordByHead "3" word cols
+else instance FlushColumnWordByHead "4" word cols
+else instance FlushColumnWordByHead "5" word cols
+else instance FlushColumnWordByHead "6" word cols
+else instance FlushColumnWordByHead "7" word cols
+else instance FlushColumnWordByHead "8" word cols
+else instance FlushColumnWordByHead "9" word cols
+else instance Row.Cons word typ rest cols => FlushColumnWordByHead head word cols
+else instance
+  Fail (Beside (Beside (Text "Column ") (Quote word)) (Text " does not exist in the table")) =>
+  FlushColumnWordByHead head word cols
+
+class ValidateAfterName :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateAfterName acc rest cols
+
+instance FlushColumnWord acc cols => ValidateAfterName acc "" cols
+else instance
+  ( FlushColumnWord acc cols
+  , Symbol.Cons h t rest
+  , ValidateAfterNameByHead h t cols
+  ) =>
+  ValidateAfterName acc rest cols
+
+class ValidateAfterNameByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateAfterNameByHead head tail cols
+
+instance
+  ( SkipSpaces tail rest
+  , ValidateColumns rest cols
+  ) =>
+  ValidateAfterNameByHead "," tail cols
+
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , HandleAfterColumnWord word afterWord cols
+  ) =>
+  ValidateAfterNameByHead h t cols
+
 class HandleAfterColumnWord :: Symbol -> Symbol -> Row Type -> Constraint
 class HandleAfterColumnWord word rest cols
 
--- AS alias: skip the alias, then expect comma or end
 instance SkipAlias rest cols => HandleAfterColumnWord "AS" rest cols
 else instance SkipAlias rest cols => HandleAfterColumnWord "as" rest cols
 
--- Skip the alias word, then expect comma or end of string
 class SkipAlias :: Symbol -> Row Type -> Constraint
 class SkipAlias sym cols
 
@@ -624,390 +1107,182 @@ instance
   ) =>
   ExpectCommaOrEndByHead "," tail cols
 
--- Skip leading spaces
-class SkipSpaces :: Symbol -> Symbol -> Constraint
-class SkipSpaces sym result | sym -> result
-
-instance SkipSpaces "" ""
-else instance
-  ( Symbol.Cons head tail sym
-  , SkipSpacesGo head tail result
-  ) =>
-  SkipSpaces sym result
-
-class SkipSpacesGo :: Symbol -> Symbol -> Symbol -> Constraint
-class SkipSpacesGo head tail result | head tail -> result
-
-instance SkipSpaces tail result => SkipSpacesGo " " tail result
-else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
-
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Type utilities
+-- ValidateJoinCondition: validate ON clause column references
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-class UnwrapMaybe :: Type -> Type -> Constraint
-class UnwrapMaybe a b | a -> b
+class ValidateJoinCondition :: Symbol -> Row (Row Type) -> Constraint
+class ValidateJoinCondition sym tables
 
-instance UnwrapMaybe (Maybe a) a
-else instance UnwrapMaybe a a
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- StripColumns: (name :: Column String None, ...) → (name :: String, ...)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class StripColumnsRL :: RL.RowList Type -> RL.RowList Type -> Constraint
-class StripColumnsRL rl out | rl -> out
-
-instance StripColumnsRL RL.Nil RL.Nil
-instance StripColumnsRL tail out' => StripColumnsRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name typ out')
-
-class StripColumns :: Row Type -> Row Type -> Constraint
-class StripColumns cols result | cols -> result
-
-instance (RowToList cols rl, StripColumnsRL rl outRL, ListToRow outRL result) => StripColumns cols result
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ParseSelect: parse "name, email AS e" → RowList (name :: String, e :: String)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ParseSelect :: Symbol -> Row Type -> Row Type -> Constraint
-class ParseSelect sym cols result | sym cols -> result
-
-instance ParseSelect "" cols ()
+instance ValidateJoinCondition "" tables
 else instance
   ( Symbol.Cons h t sym
-  , ParseSelectGo h t "" cols RL.Nil outRL
-  , ListToRow outRL result
+  , ValidateJoinCondGo h t "" tables
   ) =>
-  ParseSelect sym cols result
+  ValidateJoinCondition sym tables
 
-class ParseSelectGo :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectGo head tail acc cols accRL outRL | head tail acc cols accRL -> outRL
-
--- Comma: emit column, continue
-instance
-  ( Row.Cons acc (Column typ constraints) rest cols
-  , SkipSpaces tail rest'
-  , ParseSelectContinue rest' cols (RL.Cons acc typ accRL) outRL
-  ) =>
-  ParseSelectGo "," tail acc cols accRL outRL
-
--- Space: column name done, check for AS or comma
-else instance
-  ( SkipSpaces tail rest
-  , ParseSelectAfterCol acc rest cols accRL outRL
-  ) =>
-  ParseSelectGo " " tail acc cols accRL outRL
-
--- End of string: emit final column
-else instance
-  ( Symbol.Append acc h acc'
-  , Row.Cons acc' (Column typ constraints) rest cols
-  ) =>
-  ParseSelectGo h "" acc cols accRL (RL.Cons acc' typ accRL)
-
--- Regular char: accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ParseSelectGo nextH nextT acc' cols accRL outRL
-  ) =>
-  ParseSelectGo h tail acc cols accRL outRL
-
--- After column name + space: AS alias, comma, or end
-class ParseSelectAfterCol :: Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectAfterCol colName rest cols accRL outRL | colName rest cols accRL -> outRL
-
--- End: emit column with its own name
-instance
-  ( Row.Cons colName (Column typ constraints) rest' cols
-  ) =>
-  ParseSelectAfterCol colName "" cols accRL (RL.Cons colName typ accRL)
-
--- Non-empty: branch on first char
-else instance
-  ( Symbol.Cons h t rest
-  , ParseSelectAfterColByHead h t colName cols accRL outRL
-  ) =>
-  ParseSelectAfterCol colName rest cols accRL outRL
-
-class ParseSelectAfterColByHead :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectAfterColByHead head tail colName cols accRL outRL | head tail colName cols accRL -> outRL
-
--- Comma: emit column with own name, continue
-instance
-  ( Row.Cons colName (Column typ constraints) rest cols
-  , SkipSpaces tail rest'
-  , ParseSelectContinue rest' cols (RL.Cons colName typ accRL) outRL
-  ) =>
-  ParseSelectAfterColByHead "," tail colName cols accRL outRL
-
--- Otherwise (AS ...): extract word
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , ParseSelectHandleAS word afterWord colName cols accRL outRL
-  ) =>
-  ParseSelectAfterColByHead h t colName cols accRL outRL
-
--- Handle AS keyword: extract alias name
-class ParseSelectHandleAS :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectHandleAS keyword afterKeyword colName cols accRL outRL | keyword afterKeyword colName cols accRL -> outRL
-
-instance
-  ( ExtractWord afterKeyword alias afterAlias
-  , Row.Cons colName (Column typ constraints) rest cols
-  , SkipSpaces afterAlias rest'
-  , ParseSelectExpectCommaOrEnd rest' cols (RL.Cons alias typ accRL) outRL
-  ) =>
-  ParseSelectHandleAS "AS" afterKeyword colName cols accRL outRL
-
-else instance
-  ( ExtractWord afterKeyword alias afterAlias
-  , Row.Cons colName (Column typ constraints) rest cols
-  , SkipSpaces afterAlias rest'
-  , ParseSelectExpectCommaOrEnd rest' cols (RL.Cons alias typ accRL) outRL
-  ) =>
-  ParseSelectHandleAS "as" afterKeyword colName cols accRL outRL
-
-class ParseSelectExpectCommaOrEnd :: Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectExpectCommaOrEnd sym cols accRL outRL | sym cols accRL -> outRL
-
-instance ParseSelectExpectCommaOrEnd "" cols accRL accRL
-else instance
-  ( Symbol.Cons h t sym
-  , ParseSelectExpectCommaOrEndByHead h t cols accRL outRL
-  ) =>
-  ParseSelectExpectCommaOrEnd sym cols accRL outRL
-
-class ParseSelectExpectCommaOrEndByHead :: Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectExpectCommaOrEndByHead head tail cols accRL outRL | head tail cols accRL -> outRL
-
-instance
-  ( SkipSpaces tail rest
-  , ParseSelectContinue rest cols accRL outRL
-  ) =>
-  ParseSelectExpectCommaOrEndByHead "," tail cols accRL outRL
-
--- Continue parsing more columns
-class ParseSelectContinue :: Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectContinue sym cols accRL outRL | sym cols accRL -> outRL
-
-instance ParseSelectContinue "" cols accRL accRL
-else instance
-  ( Symbol.Cons h t sym
-  , ParseSelectGo h t "" cols accRL outRL
-  ) =>
-  ParseSelectContinue sym cols accRL outRL
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ParseWhere: parse "id = $id AND age > $age" → params (id :: Int, age :: Int)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
--- Sentinel type for "no current column type yet"
-data NoType
-
-class ParseWhere :: Symbol -> Row Type -> Row Type -> Constraint
-class ParseWhere sym cols params | sym cols -> params
-
-instance ParseWhere "" cols ()
-else instance
-  ( Symbol.Cons h t sym
-  , ParseWhereGo h t "" NoType cols RL.Nil outRL
-  , ListToRow outRL params
-  ) =>
-  ParseWhere sym cols params
-
-class ParseWhereGo :: Symbol -> Symbol -> Symbol -> Type -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseWhereGo head tail acc currentType cols paramsIn paramsOut | head tail acc currentType cols paramsIn -> paramsOut
+class ValidateJoinCondGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidateJoinCondGo head tail acc tables
 
 -- Space: flush word, continue
 instance
-  ( FlushWhereWord acc currentType cols paramsIn currentType' paramsOut'
+  ( FlushJoinWord acc tables
   , SkipSpaces tail rest
-  , ParseWhereContinue rest currentType' cols paramsOut' paramsOut
+  , ValidateJoinCondition rest tables
   ) =>
-  ParseWhereGo " " tail acc currentType cols paramsIn paramsOut
+  ValidateJoinCondGo " " tail acc tables
 
--- Operators: flush word, continue
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "=" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ">" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "<" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "!" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "(" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ")" tail acc currentType cols paramsIn paramsOut
--- JSONB / extra operators and string literals
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "'" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "@" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "?" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ":" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "~" tail acc currentType cols paramsIn paramsOut
-else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "#" tail acc currentType cols paramsIn paramsOut
+-- Operators
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "=" tail acc tables
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo ">" tail acc tables
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "<" tail acc tables
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "!" tail acc tables
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "(" tail acc tables
+else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo ")" tail acc tables
 
 -- End of string: flush final word
 else instance
   ( Symbol.Append acc h acc'
-  , FlushWhereWord acc' currentType cols paramsIn _ct paramsOut
+  , FlushJoinWord acc' tables
   ) =>
-  ParseWhereGo h "" acc currentType cols paramsIn paramsOut
+  ValidateJoinCondGo h "" acc tables
 
--- Regular char: accumulate
+-- Regular char (including dot): accumulate
 else instance
   ( Symbol.Append acc h acc'
   , Symbol.Cons nextH nextT tail
-  , ParseWhereGo nextH nextT acc' currentType cols paramsIn paramsOut
+  , ValidateJoinCondGo nextH nextT acc' tables
   ) =>
-  ParseWhereGo h tail acc currentType cols paramsIn paramsOut
+  ValidateJoinCondGo h tail acc tables
 
-class ParseWhereContinue :: Symbol -> Type -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseWhereContinue sym currentType cols paramsIn paramsOut | sym currentType cols paramsIn -> paramsOut
+class FlushJoinWord :: Symbol -> Row (Row Type) -> Constraint
+class FlushJoinWord word tables
 
-instance ParseWhereContinue "" currentType cols paramsIn paramsIn
-else instance
-  ( Symbol.Cons h t sym
-  , ParseWhereGo h t "" currentType cols paramsIn paramsOut
-  ) =>
-  ParseWhereContinue sym currentType cols paramsIn paramsOut
-
--- Flush a word in WHERE context: updates currentType and/or emits params
-class FlushWhereWord :: Symbol -> Type -> Row Type -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
-class FlushWhereWord word currentType cols paramsIn currentTypeOut paramsOut | word currentType cols paramsIn -> currentTypeOut paramsOut
-
--- Empty: pass through
-instance FlushWhereWord "" currentType cols paramsIn currentType paramsIn
-
--- SQL keywords: pass through
-else instance FlushWhereWord "AND" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "OR" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "NOT" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "IS" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "NULL" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "LIKE" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "ILIKE" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "IN" currentType cols paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "TRUE" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "FALSE" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "BETWEEN" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "ANY" currentType cols paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "ALL" currentType cols paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "CAST" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "AS" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "EXISTS" currentType cols paramsIn currentType paramsIn
--- Postgres type names (for ::type casts)
-else instance FlushWhereWord "text" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "integer" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "bigint" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "boolean" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "jsonb" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "json" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "timestamptz" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "timestamp" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "date" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "int" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "varchar" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "uuid" currentType cols paramsIn currentType paramsIn
-
--- Non-keyword: check first char
+instance FlushJoinWord "" tables
+else instance FlushJoinWord "AND" tables
+else instance FlushJoinWord "OR" tables
+else instance FlushJoinWord "NOT" tables
+else instance FlushJoinWord "IS" tables
+else instance FlushJoinWord "NULL" tables
+else instance FlushJoinWord "TRUE" tables
+else instance FlushJoinWord "FALSE" tables
 else instance
   ( Symbol.Cons head rest word
-  , FlushWhereWordByHead head word currentType cols paramsIn currentTypeOut paramsOut
+  , FlushJoinWordByHead head word tables
   ) =>
-  FlushWhereWord word currentType cols paramsIn currentTypeOut paramsOut
+  FlushJoinWord word tables
 
-class FlushWhereWordByHead :: Symbol -> Symbol -> Type -> Row Type -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
-class FlushWhereWordByHead head word currentType cols paramsIn currentTypeOut paramsOut | head word currentType cols paramsIn -> currentTypeOut paramsOut
+class FlushJoinWordByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class FlushJoinWordByHead head word tables
 
--- $param: extract param name (rest after $), emit with currentType
+instance FlushJoinWordByHead "$" word tables
+else instance FlushJoinWordByHead "0" word tables
+else instance FlushJoinWordByHead "1" word tables
+else instance FlushJoinWordByHead "2" word tables
+else instance FlushJoinWordByHead "3" word tables
+else instance FlushJoinWordByHead "4" word tables
+else instance FlushJoinWordByHead "5" word tables
+else instance FlushJoinWordByHead "6" word tables
+else instance FlushJoinWordByHead "7" word tables
+else instance FlushJoinWordByHead "8" word tables
+else instance FlushJoinWordByHead "9" word tables
+else instance ResolveColumn word tables typ => FlushJoinWordByHead head word tables
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ON CONFLICT
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ParseConflictAction :: Symbol -> Row Type -> Constraint
+class ParseConflictAction sym cols
+
 instance
-  ( Symbol.Cons "$" paramName word
+  ( ExtractWord sym w1 rest1
+  , ExpectKeyword w1 "DO"
+  , ExtractWord rest1 w2 rest2
+  , ExpectKeyword w2 "UPDATE"
+  , ExtractWord rest2 w3 rest3
+  , ExpectKeyword w3 "SET"
+  , ParseAssignments rest3 cols
   ) =>
-  FlushWhereWordByHead "$" word currentType cols paramsIn currentType (RL.Cons paramName currentType paramsIn)
+  ParseConflictAction sym cols
 
--- Digit: number literal, pass through
-else instance FlushWhereWordByHead "0" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "1" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "2" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "3" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "4" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "5" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "6" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "7" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "8" word currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWordByHead "9" word currentType cols paramsIn currentType paramsIn
+class ExpectKeyword :: Symbol -> Symbol -> Constraint
+class ExpectKeyword actual expected
 
--- Column name: look up type, strip Maybe, set as currentType
+instance ExpectKeyword a a
 else instance
-  ( Row.Cons word (Column typ constraints) rest cols
-  , UnwrapMaybe typ unwrapped
+  Fail (Beside (Beside (Text "Expected keyword ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
+  ExpectKeyword actual expected
+
+class ParseAssignments :: Symbol -> Row Type -> Constraint
+class ParseAssignments sym cols
+
+instance ParseAssignments "" cols
+else instance
+  ( ExtractWord sym colName rest1
+  , Row.Cons colName colType colRest cols
+  , SkipSpaces rest1 rest2
+  , ExpectChar rest2 "=" rest3
+  , SkipSpaces rest3 rest4
+  , ExtractWord rest4 excRef rest5
+  , ValidateExcludedRef excRef colName
+  , SkipSpaces rest5 rest6
+  , ParseAssignmentsContinue rest6 cols
   ) =>
-  FlushWhereWordByHead head word currentType cols paramsIn unwrapped paramsIn
+  ParseAssignments sym cols
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Query builder
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class ParseAssignmentsContinue :: Symbol -> Row Type -> Constraint
+class ParseAssignmentsContinue sym cols
 
-newtype Q :: Symbol -> Row Type -> Row Type -> Row Type -> Row Type -> Type
-newtype Q name cols result params stage = Q { sql :: String, values :: Array PG.PGValue }
+instance ParseAssignmentsContinue "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ParseAssignmentsContinueByHead h t cols
+  ) =>
+  ParseAssignmentsContinue sym cols
 
-class HasClause :: Symbol -> Row Type -> Constraint
-class HasClause label row
+class ParseAssignmentsContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ParseAssignmentsContinueByHead head tail cols
 
-instance Row.Cons label Unit rest row => HasClause label row
+instance
+  ( SkipSpaces tail rest
+  , ParseAssignments rest cols
+  ) =>
+  ParseAssignmentsContinueByHead "," tail cols
 
-from :: forall name cols. Proxy (Table name cols) -> Q name cols () () ()
-from _ = Q { sql: "", values: [] }
+class ExpectChar :: Symbol -> Symbol -> Symbol -> Constraint
+class ExpectChar sym char rest | sym char -> rest
 
-selectAll
-  :: forall name cols result r p stage stage'
-   . IsSymbol name
-  => StripColumns cols result
-  => Row.Lacks "select" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "set" stage
-  => Row.Lacks "delete" stage
-  => Row.Lacks "where" stage
-  => Row.Lacks "orderBy" stage
-  => Row.Lacks "limit" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "select" Unit stage stage'
-  => Q name cols r p stage
-  -> Q name cols result p stage'
-selectAll _ = Q { sql: "SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
+instance
+  ( Symbol.Cons h t sym
+  , ExpectCharMatch h t char rest
+  ) =>
+  ExpectChar sym char rest
 
-select
-  :: forall @sel name cols result r p stage stage'
-   . IsSymbol name
-  => IsSymbol sel
-  => ParseSelect sel cols result
-  => Row.Lacks "select" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "set" stage
-  => Row.Lacks "delete" stage
-  => Row.Lacks "where" stage
-  => Row.Lacks "orderBy" stage
-  => Row.Lacks "limit" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "select" Unit stage stage'
-  => Q name cols r p stage
-  -> Q name cols result p stage'
-select _ = Q { sql: "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
+class ExpectCharMatch :: Symbol -> Symbol -> Symbol -> Symbol -> Constraint
+class ExpectCharMatch head tail expected rest | head tail expected -> rest
 
-where_
-  :: forall @whr name cols result params p stage stage'
-   . IsSymbol whr
-  => ParseWhere whr cols params
-  => Row.Lacks "where" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "orderBy" stage
-  => Row.Lacks "limit" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "where" Unit stage stage'
-  => Q name cols result p stage
-  -> Q name cols result params stage'
-where_ (Q q) = Q (q { sql = q.sql <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr) })
+instance ExpectCharMatch c tail c tail
+else instance
+  Fail (Beside (Beside (Text "Expected '") (Quote expected)) (Beside (Text "' but got '") (Quote head))) =>
+  ExpectCharMatch head tail expected rest
 
-toSQL :: forall name cols result params stage. Q name cols result params stage -> String
-toSQL (Q q) = q.sql
+class ValidateExcludedRef :: Symbol -> Symbol -> Constraint
+class ValidateExcludedRef ref colName
+
+instance
+  ( Symbol.Append "EXCLUDED." colName expected
+  , MatchSymbol ref expected
+  ) =>
+  ValidateExcludedRef ref colName
+
+class MatchSymbol :: Symbol -> Symbol -> Constraint
+class MatchSymbol a b
+
+instance MatchSymbol a a
+else instance
+  Fail (Beside (Beside (Text "Expected ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
+  MatchSymbol actual expected
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Type-level IsAutoGenerated (Boolean kind)
@@ -1096,13 +1371,125 @@ instance
       <> recordValuesRL (Proxy :: Proxy tail) rec
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- MakeNullableRL: wrap column types in Maybe for LEFT JOIN
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class MakeNullableRL :: RL.RowList Type -> RL.RowList Type -> Constraint
+class MakeNullableRL rl out | rl -> out
+
+instance MakeNullableRL RL.Nil RL.Nil
+instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column (Maybe a) constraints) tail) (RL.Cons name (Column (Maybe a) constraints) out')
+else instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name (Column (Maybe typ) constraints) out')
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Query builder: unified Q type
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype Q :: Row (Row Type) -> Row Type -> Row Type -> Row Type -> Type
+newtype Q tables result params stage = Q { sql :: String, values :: Array PG.PGValue }
+
+class HasClause :: Symbol -> Row Type -> Constraint
+class HasClause label row
+
+instance Row.Cons label Unit rest row => HasClause label row
+
+toSQL :: forall tables result params stage. Q tables result params stage -> String
+toSQL (Q q) = q.sql
+
+from :: forall name cols tables. IsSymbol name => Row.Cons name cols () tables => Proxy (Table name cols) -> Q tables () () ()
+from _ = Q { sql: reflectSymbol (Proxy :: Proxy name), values: [] }
+
+selectAll
+  :: forall tables name cols result r p stage stage'
+   . SingleTable tables name cols
+  => IsSymbol name
+  => StripColumns cols result
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q tables r p stage
+  -> Q tables result p stage'
+selectAll (Q q) = Q (q { sql = "SELECT * FROM " <> q.sql })
+
+select
+  :: forall @sel tables result r p stage stage'
+   . IsSymbol sel
+  => ParseSelect sel tables result
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Row.Lacks "where" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "select" Unit stage stage'
+  => Q tables r p stage
+  -> Q tables result p stage'
+select (Q q) = Q (q { sql = "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
+
+where_
+  :: forall @whr tables result params p stage stage'
+   . IsSymbol whr
+  => ParseWhere whr tables params
+  => Row.Lacks "where" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "where" Unit stage stage'
+  => Q tables result p stage
+  -> Q tables result params stage'
+where_ (Q q) = Q (q { sql = q.sql <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr) })
+
+orderBy
+  :: forall @cols tables result params stage stage'
+   . IsSymbol cols
+  => ValidateOrderBy cols tables
+  => HasClause "select" stage
+  => Row.Lacks "orderBy" stage
+  => Row.Lacks "limit" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "orderBy" Unit stage stage'
+  => Q tables result params stage
+  -> Q tables result params stage'
+orderBy (Q q) = Q (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
+
+limit
+  :: forall tables result params stage stage'
+   . HasClause "select" stage
+  => Row.Lacks "limit" stage
+  => Row.Cons "limit" Unit stage stage'
+  => Int
+  -> Q tables result params stage
+  -> Q tables result params stage'
+limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
+
+offset
+  :: forall tables result params stage stage'
+   . HasClause "select" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "offset" Unit stage stage'
+  => Int
+  -> Q tables result params stage
+  -> Q tables result params stage'
+offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- INSERT builder
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 insert
-  :: forall name cols colsRL insertableRL insertable requiredRL required
+  :: forall tables name cols colsRL insertableRL insertable requiredRL required
        optionalProvided missing userRow userRowRL stage stage'
-   . RowToList cols colsRL
+   . SingleTable tables name cols
+  => RowToList cols colsRL
   => InsertableColumnsRL colsRL insertableRL
   => ListToRow insertableRL insertable
   => RequiredColumnsRL insertableRL requiredRL
@@ -1119,8 +1506,8 @@ insert
   => Row.Lacks "delete" stage
   => Row.Cons "insert" Unit stage stage'
   => { | userRow }
-  -> Q name cols () () stage
-  -> Q name cols () () stage'
+  -> Q tables () () stage
+  -> Q tables () () stage'
 insert rec _ = Q { sql, values }
   where
   tableName = reflectSymbol (Proxy :: Proxy name)
@@ -1140,24 +1527,26 @@ insert rec _ = Q { sql, values }
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 returning
-  :: forall @sel name cols result p stage stage'
-   . IsSymbol sel
-  => ParseSelect sel cols result
+  :: forall @sel tables name cols result p stage stage'
+   . SingleTable tables name cols
+  => IsSymbol sel
+  => ParseSelect sel tables result
   => Row.Lacks "returning" stage
   => Row.Lacks "select" stage
   => Row.Cons "returning" Unit stage stage'
-  => Q name cols () p stage
-  -> Q name cols result p stage'
+  => Q tables () p stage
+  -> Q tables result p stage'
 returning (Q q) = Q (q { sql = q.sql <> " RETURNING " <> reflectSymbol (Proxy :: Proxy sel) })
 
 returningAll
-  :: forall name cols result p stage stage'
-   . StripColumns cols result
+  :: forall tables name cols result p stage stage'
+   . SingleTable tables name cols
+  => StripColumns cols result
   => Row.Lacks "returning" stage
   => Row.Lacks "select" stage
   => Row.Cons "returning" Unit stage stage'
-  => Q name cols () p stage
-  -> Q name cols result p stage'
+  => Q tables () p stage
+  -> Q tables result p stage'
 returningAll (Q q) = Q (q { sql = q.sql <> " RETURNING *" })
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1187,8 +1576,9 @@ instance (IsSymbol name, SetClauseRL tail) => SetClauseRL (RL.Cons name typ tail
       <> setClauseRL (Proxy :: Proxy tail) (idx + 1)
 
 set
-  :: forall name cols setRow setRL stage stage'
-   . RowToList setRow setRL
+  :: forall tables name cols setRow setRL stage stage'
+   . SingleTable tables name cols
+  => RowToList setRow setRL
   => IsSymbol name
   => ValidateSetColumnsRL setRL cols
   => SetClauseRL setRL
@@ -1199,8 +1589,8 @@ set
   => Row.Lacks "delete" stage
   => Row.Cons "set" Unit stage stage'
   => { | setRow }
-  -> Q name cols () () stage
-  -> Q name cols () () stage'
+  -> Q tables () () stage
+  -> Q tables () () stage'
 set rec _ = Q { sql, values }
   where
   tableName = reflectSymbol (Proxy :: Proxy name)
@@ -1213,287 +1603,34 @@ set rec _ = Q { sql, values }
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 delete
-  :: forall name cols r p stage stage'
-   . IsSymbol name
+  :: forall tables name cols r p stage stage'
+   . SingleTable tables name cols
+  => IsSymbol name
   => Row.Lacks "select" stage
   => Row.Lacks "insert" stage
   => Row.Lacks "set" stage
   => Row.Lacks "delete" stage
   => Row.Cons "delete" Unit stage stage'
-  => Q name cols r p stage
-  -> Q name cols () () stage'
+  => Q tables r p stage
+  -> Q tables () () stage'
 delete _ = Q { sql: "DELETE FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ORDER BY / LIMIT / OFFSET
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-orderBy
-  :: forall @cols name tableCols result params stage stage'
-   . IsSymbol cols
-  => ValidateOrderBy cols tableCols
-  => HasClause "select" stage
-  => Row.Lacks "orderBy" stage
-  => Row.Lacks "limit" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "orderBy" Unit stage stage'
-  => Q name tableCols result params stage
-  -> Q name tableCols result params stage'
-orderBy (Q q) = Q (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
-
-limit
-  :: forall name cols result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "limit" stage
-  => Row.Cons "limit" Unit stage stage'
-  => Int
-  -> Q name cols result params stage
-  -> Q name cols result params stage'
-limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
-
-offset
-  :: forall name cols result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "offset" Unit stage stage'
-  => Int
-  -> Q name cols result params stage
-  -> Q name cols result params stage'
-offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
-
--- Validate ORDER BY columns: "name, age DESC" → validate name, age exist
-class ValidateOrderBy :: Symbol -> Row Type -> Constraint
-class ValidateOrderBy sym cols
-
-instance ValidateOrderBy "" cols
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateOrderByGo h t "" cols
-  ) =>
-  ValidateOrderBy sym cols
-
-class ValidateOrderByGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
-class ValidateOrderByGo head tail acc cols
-
--- Comma: flush column, continue
-instance
-  ( FlushOrderByWord acc cols
-  , SkipSpaces tail rest
-  , ValidateOrderBy rest cols
-  ) =>
-  ValidateOrderByGo "," tail acc cols
-
--- Space: flush column, skip modifiers (ASC/DESC/NULLS FIRST/NULLS LAST)
-else instance
-  ( SkipSpaces tail rest
-  , FlushOrderByThenSkipModifiers acc rest cols
-  ) =>
-  ValidateOrderByGo " " tail acc cols
-
--- End of string: flush final column
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushOrderByWord acc' cols
-  ) =>
-  ValidateOrderByGo h "" acc cols
-
--- Regular char: accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ValidateOrderByGo nextH nextT acc' cols
-  ) =>
-  ValidateOrderByGo h tail acc cols
-
-class FlushOrderByWord :: Symbol -> Row Type -> Constraint
-class FlushOrderByWord word cols
-
-instance FlushOrderByWord "" cols
-else instance FlushOrderByWord "ASC" cols
-else instance FlushOrderByWord "asc" cols
-else instance FlushOrderByWord "DESC" cols
-else instance FlushOrderByWord "desc" cols
-else instance FlushOrderByWord "NULLS" cols
-else instance FlushOrderByWord "FIRST" cols
-else instance FlushOrderByWord "LAST" cols
-else instance Row.Cons word (Column typ constraints) rest cols => FlushOrderByWord word cols
-
-class FlushOrderByThenSkipModifiers :: Symbol -> Symbol -> Row Type -> Constraint
-class FlushOrderByThenSkipModifiers colName rest cols
-
--- End of input
-instance FlushOrderByWord colName cols => FlushOrderByThenSkipModifiers colName "" cols
-
--- Non-empty: branch on first char
-else instance
-  ( FlushOrderByWord colName cols
-  , Symbol.Cons h t rest
-  , FlushOrderByThenSkipModifiersByHead h t cols
-  ) =>
-  FlushOrderByThenSkipModifiers colName rest cols
-
-class FlushOrderByThenSkipModifiersByHead :: Symbol -> Symbol -> Row Type -> Constraint
-class FlushOrderByThenSkipModifiersByHead head tail cols
-
--- Comma: continue with next column
-instance
-  ( SkipSpaces tail rest
-  , ValidateOrderBy rest cols
-  ) =>
-  FlushOrderByThenSkipModifiersByHead "," tail cols
-
--- Other: word is a modifier (ASC/DESC/etc), keep consuming
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , FlushOrderByWord word cols
-  , SkipSpaces afterWord rest'
-  , ValidateOrderByContinue rest' cols
-  ) =>
-  FlushOrderByThenSkipModifiersByHead h t cols
-
-class ValidateOrderByContinue :: Symbol -> Row Type -> Constraint
-class ValidateOrderByContinue sym cols
-
-instance ValidateOrderByContinue "" cols
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateOrderByContinueByHead h t cols
-  ) =>
-  ValidateOrderByContinue sym cols
-
-class ValidateOrderByContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
-class ValidateOrderByContinueByHead head tail cols
-
-instance
-  ( SkipSpaces tail rest
-  , ValidateOrderBy rest cols
-  ) =>
-  ValidateOrderByContinueByHead "," tail cols
-
--- More modifiers (e.g. "NULLS FIRST" after "DESC")
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , FlushOrderByWord word cols
-  , SkipSpaces afterWord rest'
-  , ValidateOrderByContinue rest' cols
-  ) =>
-  ValidateOrderByContinueByHead h t cols
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ON CONFLICT
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ParseConflictAction: validate "DO UPDATE SET col = EXCLUDED.col, ..."
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ParseConflictAction :: Symbol -> Row Type -> Constraint
-class ParseConflictAction sym cols
-
-instance
-  ( ExtractWord sym w1 rest1
-  , ExpectKeyword w1 "DO"
-  , ExtractWord rest1 w2 rest2
-  , ExpectKeyword w2 "UPDATE"
-  , ExtractWord rest2 w3 rest3
-  , ExpectKeyword w3 "SET"
-  , ParseAssignments rest3 cols
-  ) =>
-  ParseConflictAction sym cols
-
-class ExpectKeyword :: Symbol -> Symbol -> Constraint
-class ExpectKeyword actual expected
-
-instance ExpectKeyword a a
-else instance
-  Fail (Beside (Beside (Text "Expected keyword ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
-  ExpectKeyword actual expected
-
--- Parse "col = EXCLUDED.col, col2 = EXCLUDED.col2"
-class ParseAssignments :: Symbol -> Row Type -> Constraint
-class ParseAssignments sym cols
-
-instance ParseAssignments "" cols
-else instance
-  ( ExtractWord sym colName rest1
-  , Row.Cons colName colType colRest cols
-  , SkipSpaces rest1 rest2
-  , ExpectChar rest2 "=" rest3
-  , SkipSpaces rest3 rest4
-  , ExtractWord rest4 excRef rest5
-  , ValidateExcludedRef excRef colName
-  , SkipSpaces rest5 rest6
-  , ParseAssignmentsContinue rest6 cols
-  ) =>
-  ParseAssignments sym cols
-
-class ParseAssignmentsContinue :: Symbol -> Row Type -> Constraint
-class ParseAssignmentsContinue sym cols
-
-instance ParseAssignmentsContinue "" cols
-else instance
-  ( Symbol.Cons h t sym
-  , ParseAssignmentsContinueByHead h t cols
-  ) =>
-  ParseAssignmentsContinue sym cols
-
-class ParseAssignmentsContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
-class ParseAssignmentsContinueByHead head tail cols
-
-instance
-  ( SkipSpaces tail rest
-  , ParseAssignments rest cols
-  ) =>
-  ParseAssignmentsContinueByHead "," tail cols
-
-class ExpectChar :: Symbol -> Symbol -> Symbol -> Constraint
-class ExpectChar sym char rest | sym char -> rest
-
-instance
-  ( Symbol.Cons h t sym
-  , ExpectCharMatch h t char rest
-  ) =>
-  ExpectChar sym char rest
-
-class ExpectCharMatch :: Symbol -> Symbol -> Symbol -> Symbol -> Constraint
-class ExpectCharMatch head tail expected rest | head tail expected -> rest
-
-instance ExpectCharMatch c tail c tail
-else instance
-  Fail (Beside (Beside (Text "Expected '") (Quote expected)) (Beside (Text "' but got '") (Quote head))) =>
-  ExpectCharMatch head tail expected rest
-
--- Validate "EXCLUDED.col" matches the column name
-class ValidateExcludedRef :: Symbol -> Symbol -> Constraint
-class ValidateExcludedRef ref colName
-
-instance
-  ( Symbol.Append "EXCLUDED." colName expected
-  , MatchSymbol ref expected
-  ) =>
-  ValidateExcludedRef ref colName
-
-class MatchSymbol :: Symbol -> Symbol -> Constraint
-class MatchSymbol a b
-
-instance MatchSymbol a a
-else instance
-  Fail (Beside (Beside (Text "Expected ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
-  MatchSymbol actual expected
-
 onConflict
-  :: forall @target @action name cols result params stage stage'
-   . IsSymbol target
+  :: forall @target @action tables name cols result params stage stage'
+   . SingleTable tables name cols
+  => IsSymbol target
   => IsSymbol action
   => ValidateColumns target cols
   => ParseConflictAction action cols
   => HasClause "insert" stage
   => Row.Lacks "conflict" stage
   => Row.Cons "conflict" Unit stage stage'
-  => Q name cols result params stage
-  -> Q name cols result params stage'
+  => Q tables result params stage
+  -> Q tables result params stage'
 onConflict (Q q) = Q
   ( q
       { sql = q.sql
@@ -1505,14 +1642,15 @@ onConflict (Q q) = Q
   )
 
 onConflictDoNothing
-  :: forall @target name cols result params stage stage'
-   . IsSymbol target
+  :: forall @target tables name cols result params stage stage'
+   . SingleTable tables name cols
+  => IsSymbol target
   => ValidateColumns target cols
   => HasClause "insert" stage
   => Row.Lacks "conflict" stage
   => Row.Cons "conflict" Unit stage stage'
-  => Q name cols result params stage
-  -> Q name cols result params stage'
+  => Q tables result params stage
+  -> Q tables result params stage'
 onConflictDoNothing (Q q) = Q
   ( q
       { sql = q.sql
@@ -1521,6 +1659,59 @@ onConflictDoNothing (Q q) = Q
           <> ") DO NOTHING"
       }
   )
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- JOIN builders
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+innerJoin
+  :: forall @cond name cols tables tables' r p stage
+   . IsSymbol name
+  => IsSymbol cond
+  => Row.Lacks name tables
+  => Row.Cons name cols tables tables'
+  => ValidateJoinCondition cond tables'
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Proxy (Table name cols)
+  -> Q tables r p stage
+  -> Q tables' () () (join :: Unit)
+innerJoin _ (Q q) = Q
+  { sql: q.sql
+      <> " INNER JOIN "
+      <> reflectSymbol (Proxy :: Proxy name)
+      <> " ON "
+      <> reflectSymbol (Proxy :: Proxy cond)
+  , values: q.values
+  }
+
+leftJoin
+  :: forall @cond name cols colsRL nullableColsRL nullableCols tables tables' r p stage
+   . IsSymbol name
+  => IsSymbol cond
+  => RowToList cols colsRL
+  => MakeNullableRL colsRL nullableColsRL
+  => ListToRow nullableColsRL nullableCols
+  => Row.Lacks name tables
+  => Row.Cons name nullableCols tables tables'
+  => ValidateJoinCondition cond tables'
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Proxy (Table name cols)
+  -> Q tables r p stage
+  -> Q tables' () () (join :: Unit)
+leftJoin _ (Q q) = Q
+  { sql: q.sql
+      <> " LEFT JOIN "
+      <> reflectSymbol (Proxy :: Proxy name)
+      <> " ON "
+      <> reflectSymbol (Proxy :: Proxy cond)
+  , values: q.values
+  }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Query execution
@@ -1566,13 +1757,13 @@ replaceNamedParams offset entries sql = do
   { sql: sql', values: map (\e -> unsafeCoerce e.value) indexed }
 
 runQuery
-  :: forall name cols result params paramsRL stage
+  :: forall tables result params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
   => PG.Connection
   -> { | params }
-  -> Q name cols result params stage
+  -> Q tables result params stage
   -> Aff (Array { | result })
 runQuery conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1582,13 +1773,13 @@ runQuery conn params (Q q) = do
   pure (unsafeDecodeRows result.rows)
 
 runQueryOne
-  :: forall name cols result params paramsRL stage
+  :: forall tables result params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
   => PG.Connection
   -> { | params }
-  -> Q name cols result params stage
+  -> Q tables result params stage
   -> Aff (Maybe { | result })
 runQueryOne conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1598,12 +1789,12 @@ runQueryOne conn params (Q q) = do
   pure (result <#> unsafeDecodeRow)
 
 runExecute
-  :: forall name cols params paramsRL stage
+  :: forall tables params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => PG.Connection
   -> { | params }
-  -> Q name cols () params stage
+  -> Q tables () params stage
   -> Aff Int
 runExecute conn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1614,13 +1805,13 @@ runExecute conn params (Q q) = do
 -- Transaction variants
 
 runQueryTx
-  :: forall name cols result params paramsRL stage
+  :: forall tables result params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => ReadForeign { | result }
   => PG.Transaction
   -> { | params }
-  -> Q name cols result params stage
+  -> Q tables result params stage
   -> Aff (Array { | result })
 runQueryTx txn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1630,12 +1821,12 @@ runQueryTx txn params (Q q) = do
   pure (unsafeDecodeRows result.rows)
 
 runExecuteTx
-  :: forall name cols params paramsRL stage
+  :: forall tables params paramsRL stage
    . RowToList params paramsRL
   => ParamsToArray paramsRL params
   => PG.Transaction
   -> { | params }
-  -> Q name cols () params stage
+  -> Q tables () params stage
   -> Aff Int
 runExecuteTx txn params (Q q) = do
   let entries = paramsToArray (Proxy :: Proxy paramsRL) params
@@ -1650,864 +1841,3 @@ unsafeDecodeRow :: forall a. ReadForeign a => Foreign -> a
 unsafeDecodeRow f = case runExcept (readImpl f) of
   Left _ -> unsafeCoerce unit
   Right a -> a
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- JOIN query builder
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-newtype JQ :: Row (Row Type) -> Row Type -> Row Type -> Row Type -> Type
-newtype JQ tables result params stage = JQ { sql :: String, values :: Array PG.PGValue }
-
-toSQLJQ :: forall tables result params stage. JQ tables result params stage -> String
-toSQLJQ (JQ q) = q.sql
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- SplitOnDot: "users.id" → ("users", "id"); "name" → unqualified
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class SplitOnDot :: Symbol -> Boolean -> Symbol -> Symbol -> Constraint
-class SplitOnDot sym hasDot table col | sym -> hasDot table col
-
-instance
-  ( Symbol.Cons h t sym
-  , SplitOnDotGo h t "" hasDot table col
-  ) =>
-  SplitOnDot sym hasDot table col
-
-class SplitOnDotGo :: Symbol -> Symbol -> Symbol -> Boolean -> Symbol -> Symbol -> Constraint
-class SplitOnDotGo head tail acc hasDot table col | head tail acc -> hasDot table col
-
--- Found dot: acc is table, rest is column
-instance SplitOnDotGo "." tail acc True acc tail
-
--- End of string without dot: unqualified
-else instance
-  ( Symbol.Append acc h col
-  ) =>
-  SplitOnDotGo h "" acc False "" col
-
--- Regular char: accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , SplitOnDotGo nextH nextT acc' hasDot table col
-  ) =>
-  SplitOnDotGo h tail acc hasDot table col
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ResolveColumn: look up a column (qualified or unqualified) in tables
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ResolveColumn :: Symbol -> Row (Row Type) -> Type -> Constraint
-class ResolveColumn word tables typ | word tables -> typ
-
-instance
-  ( SplitOnDot word hasDot table col
-  , ResolveColumnBranch hasDot table col tables typ
-  ) =>
-  ResolveColumn word tables typ
-
-class ResolveColumnBranch :: Boolean -> Symbol -> Symbol -> Row (Row Type) -> Type -> Constraint
-class ResolveColumnBranch hasDot table col tables typ | hasDot table col tables -> typ
-
--- Qualified: has dot
-instance
-  ( Row.Cons table tableCols restTables tables
-  , Row.Cons col typ restCols tableCols
-  ) =>
-  ResolveColumnBranch True table col tables typ
-
--- Unqualified: no dot
-else instance
-  ( RowToList tables tablesRL
-  , FindUnqualifiedColumn col tablesRL typ
-  ) =>
-  ResolveColumnBranch False table col tables typ
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- FindUnqualifiedColumn: search all tables for a column name
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class FindUnqualifiedColumn :: Symbol -> RL.RowList (Row Type) -> Type -> Constraint
-class FindUnqualifiedColumn col tablesRL typ | col tablesRL -> typ
-
-instance
-  ( Fail (Beside (Text "Column ") (Beside (Quote col) (Text " not found in any joined table")))
-  ) =>
-  FindUnqualifiedColumn col RL.Nil typ
-
-instance
-  ( RowToList tableCols colsRL
-  , HasColumnRL col colsRL found
-  , FindUnqualifiedColumnDecide found col tableName tableCols tailTables typ
-  ) =>
-  FindUnqualifiedColumn col (RL.Cons tableName tableCols tailTables) typ
-
-class HasColumnRL :: Symbol -> RL.RowList Type -> Boolean -> Constraint
-class HasColumnRL col rl found | col rl -> found
-
-instance HasColumnRL col RL.Nil False
-instance HasColumnRL col (RL.Cons col typ tail) True
-else instance HasColumnRL col tail found => HasColumnRL col (RL.Cons name typ tail) found
-
-class FindUnqualifiedColumnDecide :: Boolean -> Symbol -> Symbol -> Row Type -> RL.RowList (Row Type) -> Type -> Constraint
-class FindUnqualifiedColumnDecide found col tableName tableCols restTables typ | found col tableName tableCols restTables -> typ
-
--- Found in this table: verify it's not in remaining tables
-instance
-  ( Row.Cons col typ restCols tableCols
-  , AssertNotInRemainingTables col restTables
-  ) =>
-  FindUnqualifiedColumnDecide True col tableName tableCols restTables typ
-
--- Not found in this table: keep searching
-instance
-  FindUnqualifiedColumn col restTables typ =>
-  FindUnqualifiedColumnDecide False col tableName tableCols restTables typ
-
-class AssertNotInRemainingTables :: Symbol -> RL.RowList (Row Type) -> Constraint
-class AssertNotInRemainingTables col tablesRL
-
-instance AssertNotInRemainingTables col RL.Nil
-instance
-  ( RowToList tableCols colsRL
-  , HasColumnRL col colsRL found
-  , AssertNotAmbiguous found col tableName
-  , AssertNotInRemainingTables col tail
-  ) =>
-  AssertNotInRemainingTables col (RL.Cons tableName tableCols tail)
-
-class AssertNotAmbiguous :: Boolean -> Symbol -> Symbol -> Constraint
-class AssertNotAmbiguous found col tableName
-
-instance AssertNotAmbiguous False col tableName
-instance
-  ( Fail (Beside (Text "Column ") (Beside (Quote col) (Text " is ambiguous - qualify with table name")))
-  ) =>
-  AssertNotAmbiguous True col tableName
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ValidateJoinCondition: validate ON clause column references
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ValidateJoinCondition :: Symbol -> Row (Row Type) -> Constraint
-class ValidateJoinCondition sym tables
-
-instance ValidateJoinCondition "" tables
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateJoinCondGo h t "" tables
-  ) =>
-  ValidateJoinCondition sym tables
-
-class ValidateJoinCondGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
-class ValidateJoinCondGo head tail acc tables
-
--- Space: flush word, continue
-instance
-  ( FlushJoinWord acc tables
-  , SkipSpaces tail rest
-  , ValidateJoinCondition rest tables
-  ) =>
-  ValidateJoinCondGo " " tail acc tables
-
--- Operators
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "=" tail acc tables
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo ">" tail acc tables
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "<" tail acc tables
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "!" tail acc tables
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "(" tail acc tables
-else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo ")" tail acc tables
-
--- End of string: flush final word
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushJoinWord acc' tables
-  ) =>
-  ValidateJoinCondGo h "" acc tables
-
--- Regular char (including dot): accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ValidateJoinCondGo nextH nextT acc' tables
-  ) =>
-  ValidateJoinCondGo h tail acc tables
-
-class FlushJoinWord :: Symbol -> Row (Row Type) -> Constraint
-class FlushJoinWord word tables
-
-instance FlushJoinWord "" tables
-else instance FlushJoinWord "AND" tables
-else instance FlushJoinWord "OR" tables
-else instance FlushJoinWord "NOT" tables
-else instance FlushJoinWord "IS" tables
-else instance FlushJoinWord "NULL" tables
-else instance FlushJoinWord "TRUE" tables
-else instance FlushJoinWord "FALSE" tables
-else instance
-  ( Symbol.Cons head rest word
-  , FlushJoinWordByHead head word tables
-  ) =>
-  FlushJoinWord word tables
-
-class FlushJoinWordByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
-class FlushJoinWordByHead head word tables
-
--- $-prefixed: parameter, skip
-instance FlushJoinWordByHead "$" word tables
--- Digit-prefixed: number literal, skip
-else instance FlushJoinWordByHead "0" word tables
-else instance FlushJoinWordByHead "1" word tables
-else instance FlushJoinWordByHead "2" word tables
-else instance FlushJoinWordByHead "3" word tables
-else instance FlushJoinWordByHead "4" word tables
-else instance FlushJoinWordByHead "5" word tables
-else instance FlushJoinWordByHead "6" word tables
-else instance FlushJoinWordByHead "7" word tables
-else instance FlushJoinWordByHead "8" word tables
-else instance FlushJoinWordByHead "9" word tables
--- Column reference (qualified or unqualified): resolve
-else instance ResolveColumn word tables typ => FlushJoinWordByHead head word tables
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- innerJoin: Q → JQ
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-innerJoin
-  :: forall @cond name1 cols1 name2 cols2 r p tables tables' stage
-   . IsSymbol name1
-  => IsSymbol name2
-  => IsSymbol cond
-  => Row.Cons name1 cols1 () tables'
-  => Row.Cons name2 cols2 tables' tables
-  => ValidateJoinCondition cond tables
-  => Row.Lacks "select" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "set" stage
-  => Row.Lacks "delete" stage
-  => Proxy (Table name2 cols2)
-  -> Q name1 cols1 r p stage
-  -> JQ tables () () (join :: Unit)
-innerJoin _ _ = JQ
-  { sql: reflectSymbol (Proxy :: Proxy name1)
-      <> " INNER JOIN "
-      <> reflectSymbol (Proxy :: Proxy name2)
-      <> " ON "
-      <> reflectSymbol (Proxy :: Proxy cond)
-  , values: []
-  }
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ParseSelectJQ: parse "users.name, posts.title AS t" against tables
--- Result labels: column name (after dot) or explicit AS alias
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ParseSelectJQ :: Symbol -> Row (Row Type) -> Row Type -> Constraint
-class ParseSelectJQ sym tables result | sym tables -> result
-
-instance ParseSelectJQ "" tables ()
-else instance
-  ( Symbol.Cons h t sym
-  , ParseSelectJQGo h t "" tables RL.Nil outRL
-  , ListToRow outRL result
-  ) =>
-  ParseSelectJQ sym tables result
-
-class ParseSelectJQGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQGo head tail acc tables accRL outRL | head tail acc tables accRL -> outRL
-
--- Comma: emit column, continue
-instance
-  ( ResolveColumn acc tables (Column typ constraints)
-  , SplitOnDot acc _hasDot _table colName
-  , SkipSpaces tail rest
-  , ParseSelectJQContinue rest tables (RL.Cons colName typ accRL) outRL
-  ) =>
-  ParseSelectJQGo "," tail acc tables accRL outRL
-
--- Space: column reference done, check for AS or comma
-else instance
-  ( SkipSpaces tail rest
-  , ParseSelectJQAfterCol acc rest tables accRL outRL
-  ) =>
-  ParseSelectJQGo " " tail acc tables accRL outRL
-
--- End of string: emit final column
-else instance
-  ( Symbol.Append acc h acc'
-  , ResolveColumn acc' tables (Column typ constraints)
-  , SplitOnDot acc' _hasDot _table colName
-  ) =>
-  ParseSelectJQGo h "" acc tables accRL (RL.Cons colName typ accRL)
-
--- Regular char (including dot): accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ParseSelectJQGo nextH nextT acc' tables accRL outRL
-  ) =>
-  ParseSelectJQGo h tail acc tables accRL outRL
-
--- After column name + space: AS alias, comma, or end
-class ParseSelectJQAfterCol :: Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQAfterCol colRef rest tables accRL outRL | colRef rest tables accRL -> outRL
-
--- End: emit column with default label (column name after dot)
-instance
-  ( ResolveColumn colRef tables (Column typ constraints)
-  , SplitOnDot colRef _hasDot _table colName
-  ) =>
-  ParseSelectJQAfterCol colRef "" tables accRL (RL.Cons colName typ accRL)
-
--- Non-empty: branch on first char
-else instance
-  ( Symbol.Cons h t rest
-  , ParseSelectJQAfterColByHead h t colRef tables accRL outRL
-  ) =>
-  ParseSelectJQAfterCol colRef rest tables accRL outRL
-
-class ParseSelectJQAfterColByHead :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQAfterColByHead head tail colRef tables accRL outRL | head tail colRef tables accRL -> outRL
-
--- Comma: emit column with default label, continue
-instance
-  ( ResolveColumn colRef tables (Column typ constraints)
-  , SplitOnDot colRef _hasDot _table colName
-  , SkipSpaces tail rest
-  , ParseSelectJQContinue rest tables (RL.Cons colName typ accRL) outRL
-  ) =>
-  ParseSelectJQAfterColByHead "," tail colRef tables accRL outRL
-
--- Otherwise (AS ...): extract word
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest keyword afterKeyword
-  , ParseSelectJQHandleAS keyword afterKeyword colRef tables accRL outRL
-  ) =>
-  ParseSelectJQAfterColByHead h t colRef tables accRL outRL
-
-class ParseSelectJQHandleAS :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQHandleAS keyword afterKeyword colRef tables accRL outRL | keyword afterKeyword colRef tables accRL -> outRL
-
-instance
-  ( ExtractWord afterKeyword alias afterAlias
-  , ResolveColumn colRef tables (Column typ constraints)
-  , SkipSpaces afterAlias rest
-  , ParseSelectJQExpectEnd rest tables (RL.Cons alias typ accRL) outRL
-  ) =>
-  ParseSelectJQHandleAS "AS" afterKeyword colRef tables accRL outRL
-
-else instance
-  ( ExtractWord afterKeyword alias afterAlias
-  , ResolveColumn colRef tables (Column typ constraints)
-  , SkipSpaces afterAlias rest
-  , ParseSelectJQExpectEnd rest tables (RL.Cons alias typ accRL) outRL
-  ) =>
-  ParseSelectJQHandleAS "as" afterKeyword colRef tables accRL outRL
-
-class ParseSelectJQExpectEnd :: Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQExpectEnd sym tables accRL outRL | sym tables accRL -> outRL
-
-instance ParseSelectJQExpectEnd "" tables accRL accRL
-else instance
-  ( Symbol.Cons h t sym
-  , ParseSelectJQExpectEndByHead h t tables accRL outRL
-  ) =>
-  ParseSelectJQExpectEnd sym tables accRL outRL
-
-class ParseSelectJQExpectEndByHead :: Symbol -> Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQExpectEndByHead head tail tables accRL outRL | head tail tables accRL -> outRL
-
-instance
-  ( SkipSpaces tail rest
-  , ParseSelectJQContinue rest tables accRL outRL
-  ) =>
-  ParseSelectJQExpectEndByHead "," tail tables accRL outRL
-
-class ParseSelectJQContinue :: Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseSelectJQContinue sym tables accRL outRL | sym tables accRL -> outRL
-
-instance ParseSelectJQContinue "" tables accRL accRL
-else instance
-  ( Symbol.Cons h t sym
-  , ParseSelectJQGo h t "" tables accRL outRL
-  ) =>
-  ParseSelectJQContinue sym tables accRL outRL
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- selectJQ: SELECT for join queries
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-selectJQ
-  :: forall @sel tables result r p stage stage'
-   . IsSymbol sel
-  => ParseSelectJQ sel tables result
-  => Row.Lacks "select" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "set" stage
-  => Row.Lacks "delete" stage
-  => Row.Cons "select" Unit stage stage'
-  => JQ tables r p stage
-  -> JQ tables result p stage'
-selectJQ (JQ q) = JQ (q { sql = "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ParseWhereJQ: parse WHERE with qualified column support
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ParseWhereJQ :: Symbol -> Row (Row Type) -> Row Type -> Constraint
-class ParseWhereJQ sym tables params | sym tables -> params
-
-instance ParseWhereJQ "" tables ()
-else instance
-  ( Symbol.Cons h t sym
-  , ParseWhereJQGo h t "" NoType tables RL.Nil outRL
-  , ListToRow outRL params
-  ) =>
-  ParseWhereJQ sym tables params
-
-class ParseWhereJQGo :: Symbol -> Symbol -> Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseWhereJQGo head tail acc currentType tables paramsIn paramsOut | head tail acc currentType tables paramsIn -> paramsOut
-
--- Space: flush word, continue
-instance
-  ( FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut'
-  , SkipSpaces tail rest
-  , ParseWhereJQContinue rest currentType' tables paramsOut' paramsOut
-  ) =>
-  ParseWhereJQGo " " tail acc currentType tables paramsIn paramsOut
-
--- Operators
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "=" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo ">" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "<" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "!" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "(" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo ")" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "'" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "@" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "?" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo ":" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "~" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWordJQ acc currentType tables paramsIn currentType' paramsOut', ParseWhereJQContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereJQGo "#" tail acc currentType tables paramsIn paramsOut
-
--- End of string: flush final word
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushWhereWordJQ acc' currentType tables paramsIn _ct paramsOut
-  ) =>
-  ParseWhereJQGo h "" acc currentType tables paramsIn paramsOut
-
--- Regular char (including dot): accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ParseWhereJQGo nextH nextT acc' currentType tables paramsIn paramsOut
-  ) =>
-  ParseWhereJQGo h tail acc currentType tables paramsIn paramsOut
-
-class ParseWhereJQContinue :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
-class ParseWhereJQContinue sym currentType tables paramsIn paramsOut | sym currentType tables paramsIn -> paramsOut
-
-instance ParseWhereJQContinue "" currentType tables paramsIn paramsIn
-else instance
-  ( Symbol.Cons h t sym
-  , ParseWhereJQGo h t "" currentType tables paramsIn paramsOut
-  ) =>
-  ParseWhereJQContinue sym currentType tables paramsIn paramsOut
-
--- Flush a word in JQ WHERE context
-class FlushWhereWordJQ :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
-class FlushWhereWordJQ word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
-
-instance FlushWhereWordJQ "" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "AND" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "OR" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "NOT" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "IS" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "NULL" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "LIKE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "ILIKE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "IN" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWordJQ "TRUE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "FALSE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "BETWEEN" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "ANY" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWordJQ "ALL" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWordJQ "CAST" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "AS" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "EXISTS" currentType tables paramsIn currentType paramsIn
--- Postgres type names
-else instance FlushWhereWordJQ "text" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "integer" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "bigint" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "boolean" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "jsonb" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "json" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "timestamptz" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "timestamp" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "date" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "int" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "varchar" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQ "uuid" currentType tables paramsIn currentType paramsIn
--- Non-keyword: check first char
-else instance
-  ( Symbol.Cons head rest word
-  , FlushWhereWordJQByHead head word currentType tables paramsIn currentTypeOut paramsOut
-  ) =>
-  FlushWhereWordJQ word currentType tables paramsIn currentTypeOut paramsOut
-
-class FlushWhereWordJQByHead :: Symbol -> Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
-class FlushWhereWordJQByHead head word currentType tables paramsIn currentTypeOut paramsOut | head word currentType tables paramsIn -> currentTypeOut paramsOut
-
--- $param: emit with currentType
-instance
-  ( Symbol.Cons "$" paramName word
-  ) =>
-  FlushWhereWordJQByHead "$" word currentType tables paramsIn currentType (RL.Cons paramName currentType paramsIn)
-
--- Digit: number literal, pass through
-else instance FlushWhereWordJQByHead "0" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "1" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "2" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "3" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "4" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "5" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "6" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "7" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "8" word currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordJQByHead "9" word currentType tables paramsIn currentType paramsIn
-
--- Column reference: resolve and set as currentType
-else instance
-  ( ResolveColumn word tables (Column typ constraints)
-  , UnwrapMaybe typ unwrapped
-  ) =>
-  FlushWhereWordJQByHead head word currentType tables paramsIn unwrapped paramsIn
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- whereJQ: WHERE for join queries
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-whereJQ
-  :: forall @whr tables result params p stage stage'
-   . IsSymbol whr
-  => ParseWhereJQ whr tables params
-  => Row.Lacks "where" stage
-  => Row.Lacks "insert" stage
-  => Row.Cons "where" Unit stage stage'
-  => JQ tables result p stage
-  -> JQ tables result params stage'
-whereJQ (JQ q) = JQ (q { sql = q.sql <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr) })
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ValidateOrderByJQ: validate ORDER BY with qualified column support
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class ValidateOrderByJQ :: Symbol -> Row (Row Type) -> Constraint
-class ValidateOrderByJQ sym tables
-
-instance ValidateOrderByJQ "" tables
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateOrderByJQGo h t "" tables
-  ) =>
-  ValidateOrderByJQ sym tables
-
-class ValidateOrderByJQGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
-class ValidateOrderByJQGo head tail acc tables
-
--- Comma: flush column, continue
-instance
-  ( FlushOrderByWordJQ acc tables
-  , SkipSpaces tail rest
-  , ValidateOrderByJQ rest tables
-  ) =>
-  ValidateOrderByJQGo "," tail acc tables
-
--- Space: flush column, skip modifiers
-else instance
-  ( SkipSpaces tail rest
-  , FlushOrderByJQThenSkip acc rest tables
-  ) =>
-  ValidateOrderByJQGo " " tail acc tables
-
--- End of string: flush final column
-else instance
-  ( Symbol.Append acc h acc'
-  , FlushOrderByWordJQ acc' tables
-  ) =>
-  ValidateOrderByJQGo h "" acc tables
-
--- Regular char (including dot): accumulate
-else instance
-  ( Symbol.Append acc h acc'
-  , Symbol.Cons nextH nextT tail
-  , ValidateOrderByJQGo nextH nextT acc' tables
-  ) =>
-  ValidateOrderByJQGo h tail acc tables
-
-class FlushOrderByWordJQ :: Symbol -> Row (Row Type) -> Constraint
-class FlushOrderByWordJQ word tables
-
-instance FlushOrderByWordJQ "" tables
-else instance FlushOrderByWordJQ "ASC" tables
-else instance FlushOrderByWordJQ "asc" tables
-else instance FlushOrderByWordJQ "DESC" tables
-else instance FlushOrderByWordJQ "desc" tables
-else instance FlushOrderByWordJQ "NULLS" tables
-else instance FlushOrderByWordJQ "FIRST" tables
-else instance FlushOrderByWordJQ "LAST" tables
-else instance ResolveColumn word tables typ => FlushOrderByWordJQ word tables
-
-class FlushOrderByJQThenSkip :: Symbol -> Symbol -> Row (Row Type) -> Constraint
-class FlushOrderByJQThenSkip colName rest tables
-
-instance FlushOrderByWordJQ colName tables => FlushOrderByJQThenSkip colName "" tables
-else instance
-  ( FlushOrderByWordJQ colName tables
-  , Symbol.Cons h t rest
-  , FlushOrderByJQThenSkipByHead h t tables
-  ) =>
-  FlushOrderByJQThenSkip colName rest tables
-
-class FlushOrderByJQThenSkipByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
-class FlushOrderByJQThenSkipByHead head tail tables
-
--- Comma: continue with next column
-instance
-  ( SkipSpaces tail rest
-  , ValidateOrderByJQ rest tables
-  ) =>
-  FlushOrderByJQThenSkipByHead "," tail tables
-
--- Modifier word: consume it, continue
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , FlushOrderByWordJQ word tables
-  , SkipSpaces afterWord rest'
-  , ValidateOrderByJQContinue rest' tables
-  ) =>
-  FlushOrderByJQThenSkipByHead h t tables
-
-class ValidateOrderByJQContinue :: Symbol -> Row (Row Type) -> Constraint
-class ValidateOrderByJQContinue sym tables
-
-instance ValidateOrderByJQContinue "" tables
-else instance
-  ( Symbol.Cons h t sym
-  , ValidateOrderByJQContinueByHead h t tables
-  ) =>
-  ValidateOrderByJQContinue sym tables
-
-class ValidateOrderByJQContinueByHead :: Symbol -> Symbol -> Row (Row Type) -> Constraint
-class ValidateOrderByJQContinueByHead head tail tables
-
-instance
-  ( SkipSpaces tail rest
-  , ValidateOrderByJQ rest tables
-  ) =>
-  ValidateOrderByJQContinueByHead "," tail tables
-
-else instance
-  ( Symbol.Append h t rest
-  , ExtractWord rest word afterWord
-  , FlushOrderByWordJQ word tables
-  , SkipSpaces afterWord rest'
-  , ValidateOrderByJQContinue rest' tables
-  ) =>
-  ValidateOrderByJQContinueByHead h t tables
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- orderByJQ / limitJQ / offsetJQ
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-orderByJQ
-  :: forall @cols tables result params stage stage'
-   . IsSymbol cols
-  => ValidateOrderByJQ cols tables
-  => HasClause "select" stage
-  => Row.Lacks "orderBy" stage
-  => Row.Lacks "limit" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "orderBy" Unit stage stage'
-  => JQ tables result params stage
-  -> JQ tables result params stage'
-orderByJQ (JQ q) = JQ (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
-
-limitJQ
-  :: forall tables result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "limit" stage
-  => Row.Cons "limit" Unit stage stage'
-  => Int
-  -> JQ tables result params stage
-  -> JQ tables result params stage'
-limitJQ n (JQ q) = JQ (q { sql = q.sql <> " LIMIT " <> show n })
-
-offsetJQ
-  :: forall tables result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "offset" Unit stage stage'
-  => Int
-  -> JQ tables result params stage
-  -> JQ tables result params stage'
-offsetJQ n (JQ q) = JQ (q { sql = q.sql <> " OFFSET " <> show n })
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- JQ execution functions
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-runQueryJQ
-  :: forall tables result params paramsRL stage
-   . RowToList params paramsRL
-  => ParamsToArray paramsRL params
-  => ReadForeign { | result }
-  => PG.Connection
-  -> { | params }
-  -> JQ tables result params stage
-  -> Aff (Array { | result })
-runQueryJQ conn params (JQ q) = do
-  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
-  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
-  let allValues = q.values <> values
-  result <- PG.query (PG.SQL sql) allValues conn
-  pure (unsafeDecodeRows result.rows)
-
-runQueryOneJQ
-  :: forall tables result params paramsRL stage
-   . RowToList params paramsRL
-  => ParamsToArray paramsRL params
-  => ReadForeign { | result }
-  => PG.Connection
-  -> { | params }
-  -> JQ tables result params stage
-  -> Aff (Maybe { | result })
-runQueryOneJQ conn params (JQ q) = do
-  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
-  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
-  let allValues = q.values <> values
-  result <- PG.queryOne (PG.SQL sql) allValues conn
-  pure (result <#> unsafeDecodeRow)
-
-runExecuteJQ
-  :: forall tables params paramsRL stage
-   . RowToList params paramsRL
-  => ParamsToArray paramsRL params
-  => PG.Connection
-  -> { | params }
-  -> JQ tables () params stage
-  -> Aff Int
-runExecuteJQ conn params (JQ q) = do
-  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
-  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
-  let allValues = q.values <> values
-  PG.execute (PG.SQL sql) allValues conn
-
--- Transaction variants
-
-runQueryJQTx
-  :: forall tables result params paramsRL stage
-   . RowToList params paramsRL
-  => ParamsToArray paramsRL params
-  => ReadForeign { | result }
-  => PG.Transaction
-  -> { | params }
-  -> JQ tables result params stage
-  -> Aff (Array { | result })
-runQueryJQTx txn params (JQ q) = do
-  let entries = paramsToArray (Proxy :: Proxy paramsRL) params
-  let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
-  let allValues = q.values <> values
-  result <- PG.txQuery (PG.SQL sql) allValues txn
-  pure (unsafeDecodeRows result.rows)
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- leftJoin: Q → JQ with nullable right-table columns
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class MakeNullableRL :: RL.RowList Type -> RL.RowList Type -> Constraint
-class MakeNullableRL rl out | rl -> out
-
-instance MakeNullableRL RL.Nil RL.Nil
-instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column (Maybe a) constraints) tail) (RL.Cons name (Column (Maybe a) constraints) out')
-else instance MakeNullableRL tail out' => MakeNullableRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name (Column (Maybe typ) constraints) out')
-
-leftJoin
-  :: forall @cond name1 cols1 name2 cols2 cols2RL nullableCols2RL nullableCols2 r p tables tables' stage
-   . IsSymbol name1
-  => IsSymbol name2
-  => IsSymbol cond
-  => RowToList cols2 cols2RL
-  => MakeNullableRL cols2RL nullableCols2RL
-  => ListToRow nullableCols2RL nullableCols2
-  => Row.Cons name1 cols1 () tables'
-  => Row.Cons name2 nullableCols2 tables' tables
-  => ValidateJoinCondition cond tables
-  => Row.Lacks "select" stage
-  => Row.Lacks "insert" stage
-  => Row.Lacks "set" stage
-  => Row.Lacks "delete" stage
-  => Proxy (Table name2 cols2)
-  -> Q name1 cols1 r p stage
-  -> JQ tables () () (join :: Unit)
-leftJoin _ _ = JQ
-  { sql: reflectSymbol (Proxy :: Proxy name1)
-      <> " LEFT JOIN "
-      <> reflectSymbol (Proxy :: Proxy name2)
-      <> " ON "
-      <> reflectSymbol (Proxy :: Proxy cond)
-  , values: []
-  }
-
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Multi-way join chaining: JQ → JQ
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-innerJoinJQ
-  :: forall @cond name cols tables tables' r p stage stage'
-   . IsSymbol name
-  => IsSymbol cond
-  => Row.Lacks name tables
-  => Row.Cons name cols tables tables'
-  => ValidateJoinCondition cond tables'
-  => Row.Lacks "select" stage
-  => Row.Cons "join" Unit stage stage'
-  => Proxy (Table name cols)
-  -> JQ tables r p stage
-  -> JQ tables' () () stage'
-innerJoinJQ _ (JQ q) = JQ
-  { sql: q.sql
-      <> " INNER JOIN "
-      <> reflectSymbol (Proxy :: Proxy name)
-      <> " ON "
-      <> reflectSymbol (Proxy :: Proxy cond)
-  , values: q.values
-  }
-
-leftJoinJQ
-  :: forall @cond name cols colsRL nullableColsRL nullableCols tables tables' r p stage stage'
-   . IsSymbol name
-  => IsSymbol cond
-  => RowToList cols colsRL
-  => MakeNullableRL colsRL nullableColsRL
-  => ListToRow nullableColsRL nullableCols
-  => Row.Lacks name tables
-  => Row.Cons name nullableCols tables tables'
-  => ValidateJoinCondition cond tables'
-  => Row.Lacks "select" stage
-  => Row.Cons "join" Unit stage stage'
-  => Proxy (Table name cols)
-  -> JQ tables r p stage
-  -> JQ tables' () () stage'
-leftJoinJQ _ (JQ q) = JQ
-  { sql: q.sql
-      <> " LEFT JOIN "
-      <> reflectSymbol (Proxy :: Proxy name)
-      <> " ON "
-      <> reflectSymbol (Proxy :: Proxy cond)
-  , values: q.values
-  }
