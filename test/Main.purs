@@ -14,6 +14,7 @@ import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner (runSpec)
 import Yoga.Test.Docker as Docker
+import Test.Postgres.Schema as Schema
 import Yoga.Postgres as PG
 
 -- Test configuration
@@ -91,6 +92,8 @@ setupTableWithConstraints conn = do
 
 spec :: Spec Unit
 spec = do
+  Schema.spec
+
   describe "Yoga.Postgres Integration Tests" do
 
     -- Connection Management Tests

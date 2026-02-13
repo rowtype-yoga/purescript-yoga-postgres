@@ -3,7 +3,10 @@ module Test.Postgres.Schema where
 import Prelude
 
 import Data.Maybe (Maybe)
+import Data.String (contains, Pattern(..))
 import Data.Tuple.Nested (type (/\))
+import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Yoga.Postgres.Schema
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -81,3 +84,18 @@ ddl = createTableDDL @UsersTable
 
 -- deleteResult :: PG.Connection -> Aff Int
 -- deleteResult conn = delete @UsersTable { id: 1 } conn
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Spec
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+spec :: Spec Unit
+spec = do
+  describe "Schema" do
+    describe "CREATE TABLE DDL" do
+      it "generates correct DDL for UsersTable" do
+        ddl `shouldSatisfy` contains (Pattern "CREATE TABLE users")
+        ddl `shouldSatisfy` contains (Pattern "id INTEGER NOT NULL PRIMARY KEY")
+        ddl `shouldSatisfy` contains (Pattern "name TEXT NOT NULL")
+        ddl `shouldSatisfy` contains (Pattern "email TEXT NOT NULL UNIQUE")
+        ddl `shouldSatisfy` contains (Pattern "age INTEGER")
