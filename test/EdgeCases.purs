@@ -111,18 +111,22 @@ lowercaseAndOr :: Q _ _ (minAge :: Int, namePat :: String) _
 lowercaseAndOr = from usersTable # selectAll # where_ @"age > $minAge or name like $namePat"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- EDGE CASE 6: DISTINCT ORDER BY on non-selected column
--- PostgreSQL: "ORDER BY items must appear in the select list"
--- when using SELECT DISTINCT
+-- EDGE CASE 6: DISTINCT ORDER BY validated (FIXED)
+-- ORDER BY columns must appear in SELECT list when using DISTINCT
+-- (see DistinctOrderByNonSelected.purs)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- Produces: SELECT DISTINCT name FROM users ORDER BY age
--- PostgreSQL rejects this but it compiles
-distinctOrderByNonSelected
+distinctOrderByValid
   :: Q _ (name :: String) () _
-distinctOrderByNonSelected = from usersTable
+distinctOrderByValid = from usersTable
   # selectDistinct @"name"
-  # orderBy @"age"
+  # orderBy @"name"
+
+distinctOrderByMultiple
+  :: Q _ (name :: String, age :: Maybe Int) () _
+distinctOrderByMultiple = from usersTable
+  # selectDistinct @"name, age"
+  # orderBy @"name, age DESC"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 7: Nonexistent column in OVER (FIXED)

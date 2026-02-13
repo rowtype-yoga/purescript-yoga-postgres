@@ -771,6 +771,7 @@ else instance
 
 -- Peano depth counter for nested parentheses
 data Z
+
 data S :: Type -> Type
 data S n
 
@@ -1210,74 +1211,23 @@ else instance
   ParseWhereContinue sym currentType tables paramsIn paramsOut
 
 -- Flush a word in WHERE context
+-- Dispatches on first character to avoid linear search through all keywords
 class FlushWhereWord :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWord word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
 instance FlushWhereWord "" currentType tables paramsIn currentType paramsIn
+-- Most common SQL keywords matched directly for fast resolution
 else instance FlushWhereWord "AND" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "OR" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "NOT" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "IS" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "NULL" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "LIKE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "ILIKE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "IN" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "TRUE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "FALSE" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "BETWEEN" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "ANY" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "ALL" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "CAST" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "AS" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "EXISTS" currentType tables paramsIn currentType paramsIn
--- Lowercase SQL keywords
 else instance FlushWhereWord "and" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "OR" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "or" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "NOT" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "not" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "IS" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "is" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWord "NULL" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWord "null" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "like" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "ilike" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "in" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "true" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "false" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "between" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "any" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "all" currentType tables paramsIn (Array currentType) paramsIn
-else instance FlushWhereWord "cast" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "as" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "exists" currentType tables paramsIn currentType paramsIn
--- Aggregate functions (for HAVING support)
-else instance FlushWhereWord "COUNT" currentType tables paramsIn Int paramsIn
-else instance FlushWhereWord "SUM" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "AVG" currentType tables paramsIn Number paramsIn
-else instance FlushWhereWord "MIN" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "MAX" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "ARRAY_AGG" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "STRING_AGG" currentType tables paramsIn String paramsIn
--- Lowercase aggregate functions
-else instance FlushWhereWord "count" currentType tables paramsIn Int paramsIn
-else instance FlushWhereWord "sum" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "avg" currentType tables paramsIn Number paramsIn
-else instance FlushWhereWord "min" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "max" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "array_agg" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "string_agg" currentType tables paramsIn String paramsIn
-else instance FlushWhereWord "*" currentType tables paramsIn currentType paramsIn
--- Postgres type names (for ::type casts)
-else instance FlushWhereWord "text" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "integer" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "bigint" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "boolean" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "jsonb" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "json" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "timestamptz" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "timestamp" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "date" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "int" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "varchar" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWord "uuid" currentType tables paramsIn currentType paramsIn
--- Non-keyword: check first char
+-- Everything else: dispatch on first character
 else instance
   ( Symbol.Cons head rest word
   , FlushWhereWordByHead head word currentType tables paramsIn currentTypeOut paramsOut
@@ -1304,14 +1254,251 @@ else instance FlushWhereWordByHead "6" word currentType tables paramsIn currentT
 else instance FlushWhereWordByHead "7" word currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordByHead "8" word currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordByHead "9" word currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "*" word currentType tables paramsIn currentType paramsIn
 
--- Column reference: resolve and set as currentType
+-- Letters with keywords: dispatch to per-letter helpers
+else instance FlushWhereWordA word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "A" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordA word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "a" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordB word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "B" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordB word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "b" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordC word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "C" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordC word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "c" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordD word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "D" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordD word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "d" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordE word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "E" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordE word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "e" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordF word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "F" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordF word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "f" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordI word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "I" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordI word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "i" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordJ word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "J" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordJ word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "j" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordL word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "L" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordL word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "l" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordM word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "M" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordM word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "m" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordN word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "N" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordN word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "n" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordS word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "S" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordS word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "s" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordT word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "T" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordT word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "t" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordU word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "U" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordU word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "u" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordV word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "V" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordV word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "v" word currentType tables paramsIn currentTypeOut paramsOut
+
+-- Catch-all: column reference (letters without keywords like g, h, p, q, r, w, x, y, z)
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
   , UnwrapMaybe typ unwrapped
   ) =>
   FlushWhereWordByHead head word currentType tables paramsIn unwrapped paramsIn
+
+-- Per-letter keyword helpers
+
+class FlushWhereWordA :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordA word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordA "ANY" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordA "any" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordA "ALL" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordA "all" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordA "AS" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordA "as" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordA "AVG" currentType tables paramsIn Number paramsIn
+else instance FlushWhereWordA "avg" currentType tables paramsIn Number paramsIn
+else instance FlushWhereWordA "ARRAY_AGG" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordA "array_agg" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordA word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordB :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordB word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordB "BETWEEN" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordB "between" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordB "bigint" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordB "boolean" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordB word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordC :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordC word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordC "CAST" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "cast" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "COUNT" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWordC "count" currentType tables paramsIn Int paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordC word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordD :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordD word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordD "date" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordD word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordE :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordE word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordE "EXISTS" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordE "exists" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordE word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordF :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordF word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordF "FALSE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordF "false" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordF word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordI :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordI word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordI "IN" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordI "in" currentType tables paramsIn (Array currentType) paramsIn
+else instance FlushWhereWordI "ILIKE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordI "ilike" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordI "integer" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordI "int" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordI word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordJ :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordJ word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordJ "jsonb" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordJ "json" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordJ word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordL :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordL word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordL "LIKE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordL "like" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordL word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordM :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordM word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordM "MIN" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordM "min" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordM "MAX" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordM "max" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordM word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordN :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordN word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordN "NOT" currentType tables paramsIn currentType paramsIn -- unreachable (caught by FlushWhereWord directly) but included for self-containedness
+else instance FlushWhereWordN "not" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "NULL" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "null" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordN word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordS :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordS word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordS "SUM" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordS "sum" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordS "STRING_AGG" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordS "string_agg" currentType tables paramsIn String paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordS word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordT :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordT word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordT "TRUE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "true" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "text" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "timestamptz" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "timestamp" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordT word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordU :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordU word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordU "uuid" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordU word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordV :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordV word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordV "varchar" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordV word currentType tables paramsIn unwrapped paramsIn
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ValidateColumnList: comma-separated column references
@@ -1486,6 +1673,177 @@ else instance
   , ValidateOrderByContinue rest' tables
   ) =>
   ValidateOrderByContinueByHead h t tables
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- RowListHas: check if a label exists in a RowList
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class RowListHas :: Symbol -> RL.RowList Type -> Boolean -> Constraint
+class RowListHas label rl has | label rl -> has
+
+instance RowListHas label RL.Nil False
+instance RowListHas label (RL.Cons label typ rest) True
+else instance RowListHas label rest has => RowListHas label (RL.Cons other typ rest) has
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- CheckDistinctOrderBy: when DISTINCT is in stage, ORDER BY
+-- columns must appear in the SELECT result list
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class CheckDistinctOrderBy :: Row Type -> Symbol -> Row Type -> Constraint
+class CheckDistinctOrderBy stage cols result
+
+instance
+  ( RowToList stage stageRL
+  , RowListHas "distinct" stageRL isDistinct
+  , CheckDistinctOrderByBranch isDistinct cols result
+  ) =>
+  CheckDistinctOrderBy stage cols result
+
+class CheckDistinctOrderByBranch :: Boolean -> Symbol -> Row Type -> Constraint
+class CheckDistinctOrderByBranch isDistinct cols result
+
+instance OrderByColumnsInResult cols result => CheckDistinctOrderByBranch True cols result
+instance CheckDistinctOrderByBranch False cols result
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- OrderByColumnsInResult: validate ORDER BY column refs exist in result row
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class OrderByColumnsInResult :: Symbol -> Row Type -> Constraint
+class OrderByColumnsInResult sym result
+
+instance OrderByColumnsInResult "" result
+else instance
+  ( Symbol.Cons h t sym
+  , OrderByColumnsInResultGo h t "" result
+  ) =>
+  OrderByColumnsInResult sym result
+
+class OrderByColumnsInResultGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
+class OrderByColumnsInResultGo head tail acc result
+
+-- Comma: flush column, continue
+instance
+  ( FlushOrderByWordInResult acc result
+  , SkipSpaces tail rest
+  , OrderByColumnsInResult rest result
+  ) =>
+  OrderByColumnsInResultGo "," tail acc result
+
+-- Space: flush word, skip modifiers
+else instance
+  ( SkipSpaces tail rest
+  , FlushOrderByThenSkipInResult acc rest result
+  ) =>
+  OrderByColumnsInResultGo " " tail acc result
+
+-- End of string: flush final column
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushOrderByWordInResult acc' result
+  ) =>
+  OrderByColumnsInResultGo h "" acc result
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , OrderByColumnsInResultGo nextH nextT acc' result
+  ) =>
+  OrderByColumnsInResultGo h tail acc result
+
+class FlushOrderByWordInResult :: Symbol -> Row Type -> Constraint
+class FlushOrderByWordInResult word result
+
+instance FlushOrderByWordInResult "" result
+else instance FlushOrderByWordInResult "ASC" result
+else instance FlushOrderByWordInResult "asc" result
+else instance FlushOrderByWordInResult "DESC" result
+else instance FlushOrderByWordInResult "desc" result
+else instance FlushOrderByWordInResult "NULLS" result
+else instance FlushOrderByWordInResult "FIRST" result
+else instance FlushOrderByWordInResult "LAST" result
+else instance CheckColumnInResult word result => FlushOrderByWordInResult word result
+
+class CheckColumnInResult :: Symbol -> Row Type -> Constraint
+class CheckColumnInResult col result
+
+instance
+  ( RowToList result rl
+  , CheckColumnInResultRL col rl
+  ) =>
+  CheckColumnInResult col result
+
+class CheckColumnInResultRL :: Symbol -> RL.RowList Type -> Constraint
+class CheckColumnInResultRL col rl
+
+instance
+  Fail (Beside (Text "ORDER BY column ") (Beside (Quote col) (Text " must appear in the SELECT list when using DISTINCT"))) =>
+  CheckColumnInResultRL col RL.Nil
+
+instance CheckColumnInResultRL col (RL.Cons col typ tail)
+
+else instance CheckColumnInResultRL col tail => CheckColumnInResultRL col (RL.Cons name typ tail)
+
+class FlushOrderByThenSkipInResult :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushOrderByThenSkipInResult colName rest result
+
+instance FlushOrderByWordInResult colName result => FlushOrderByThenSkipInResult colName "" result
+else instance
+  ( FlushOrderByWordInResult colName result
+  , Symbol.Cons h t rest
+  , FlushOrderByThenSkipByHeadInResult h t result
+  ) =>
+  FlushOrderByThenSkipInResult colName rest result
+
+class FlushOrderByThenSkipByHeadInResult :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushOrderByThenSkipByHeadInResult head tail result
+
+-- Comma: continue with next column
+instance
+  ( SkipSpaces tail rest
+  , OrderByColumnsInResult rest result
+  ) =>
+  FlushOrderByThenSkipByHeadInResult "," tail result
+
+-- Modifier word: consume it, continue
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWordInResult word result
+  , SkipSpaces afterWord rest'
+  , OrderByColumnsInResultContinue rest' result
+  ) =>
+  FlushOrderByThenSkipByHeadInResult h t result
+
+class OrderByColumnsInResultContinue :: Symbol -> Row Type -> Constraint
+class OrderByColumnsInResultContinue sym result
+
+instance OrderByColumnsInResultContinue "" result
+else instance
+  ( Symbol.Cons h t sym
+  , OrderByColumnsInResultContinueByHead h t result
+  ) =>
+  OrderByColumnsInResultContinue sym result
+
+class OrderByColumnsInResultContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class OrderByColumnsInResultContinueByHead head tail result
+
+instance
+  ( SkipSpaces tail rest
+  , OrderByColumnsInResult rest result
+  ) =>
+  OrderByColumnsInResultContinueByHead "," tail result
+
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWordInResult word result
+  , SkipSpaces afterWord rest'
+  , OrderByColumnsInResultContinue rest' result
+  ) =>
+  OrderByColumnsInResultContinueByHead h t result
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ValidateColumns: comma-separated column names (for ON CONFLICT target)
@@ -1998,7 +2356,7 @@ select
 select (Q q) = Q (q { sql = "SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
 
 selectDistinct
-  :: forall @sel tables result r p stage stage'
+  :: forall @sel tables result r p stage stage' stage''
    . IsSymbol sel
   => ParseSelect sel tables result
   => Row.Lacks "select" stage
@@ -2010,8 +2368,9 @@ selectDistinct
   => Row.Lacks "limit" stage
   => Row.Lacks "offset" stage
   => Row.Cons "select" Unit stage stage'
+  => Row.Cons "distinct" Unit stage' stage''
   => Q tables r p stage
-  -> Q tables result p stage'
+  -> Q tables result p stage''
 selectDistinct (Q q) = Q (q { sql = "SELECT DISTINCT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> q.sql })
 
 selectDistinctOn
@@ -2054,6 +2413,7 @@ orderBy
   :: forall @cols tables result params stage stage'
    . IsSymbol cols
   => ValidateOrderBy cols tables
+  => CheckDistinctOrderBy stage cols result
   => HasClause "select" stage
   => Row.Lacks "orderBy" stage
   => Row.Lacks "limit" stage
