@@ -21,7 +21,9 @@ main = launchAff_ do
     , password: PG.PostgresPassword "postgres"
     }
   _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS users") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS events") conn
   _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.UsersTable)) conn
+  _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.EventsTable)) conn
   _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
     [ PG.toPGValue "Alice", PG.toPGValue "alice@example.com", PG.toPGValue 22 ]
     conn

@@ -3,14 +3,19 @@ module Test.Postgres.Schema where
 import Prelude
 
 import Data.Array as Array
-import Data.DateTime (DateTime)
-import Data.Maybe (Maybe(..))
+import Data.Date (canonicalDate)
+import Data.DateTime (DateTime(..))
+import Data.Enum (toEnum)
+import Data.Maybe (Maybe(..), fromJust)
+import Data.Time (Time(..))
+import Partial.Unsafe (unsafePartial)
 import Data.String (contains, Pattern(..))
 import Data.Tuple.Nested (type (/\))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Foreign (Foreign)
+import Foreign (Foreign, unsafeToForeign)
 import JS.BigInt (BigInt)
+import JS.BigInt as BigInt
 import Prim.Boolean (True)
 import Test.Spec (Spec, around, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
@@ -103,7 +108,18 @@ typedTitleLike = from eventsTable # selectAll # where_ @"title LIKE $title"
 
 typedArrayWhere
   :: Q "events" _ _ (id :: Array Int) _
-typedArrayWhere = from eventsTable # selectAll # where_ @"id IN $id"
+typedArrayWhere = from eventsTable # selectAll # where_ @"id = ANY($id)"
+
+testDateTime :: DateTime
+testDateTime = unsafePartial do
+  let year = fromJust (toEnum 2025)
+  let month = fromJust (toEnum 1)
+  let day = fromJust (toEnum 15)
+  let hour = fromJust (toEnum 12)
+  let minute = fromJust (toEnum 0)
+  let second = fromJust (toEnum 0)
+  let ms = fromJust (toEnum 0)
+  DateTime (canonicalDate year month day) (Time hour minute second ms)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 6: Type-safe UPDATE
@@ -446,6 +462,47 @@ integrationSpec conn = do
         # where_ @"name = $name"
         # runQueryOne conn { name: "Nobody" }
       result `shouldEqual` Nothing
+
+  describe "Extended types execution" do
+    it "inserts and selects Jsonb, Array, DateTime, BigInt" do
+      _ <- from eventsTable
+        # insert
+            { title: "Launch"
+            , metadata: Jsonb (unsafeToForeign { key: "value", nested: { a: 1 } })
+            , tags: [ "release", "v1" ]
+            , created_at: testDateTime
+            , view_count: BigInt.fromInt 42
+            }
+        # runExecute conn {}
+      rows <- from eventsTable
+        # select @"title, tags, view_count"
+        # where_ @"title = $title"
+        # runQuery conn { title: "Launch" }
+      Array.length rows `shouldEqual` 1
+      (map _.title rows) `shouldEqual` [ "Launch" ]
+
+    it "inserts with returningAll" do
+      rows <- from eventsTable
+        # insert { title: "Minimal", metadata: Jsonb (unsafeToForeign {}), tags: ([] :: Array String), created_at: testDateTime, view_count: BigInt.fromInt 0 }
+        # returning @"id, title"
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+      (map _.title rows) `shouldEqual` [ "Minimal" ]
+
+    it "WHERE with JSONB @> operator" do
+      rows <- from eventsTable
+        # select @"title"
+        # where_ @"metadata @> $metadata"
+        # runQuery conn { metadata: Jsonb (unsafeToForeign { key: "value" }) }
+      Array.length rows `shouldEqual` 1
+      (map _.title rows) `shouldEqual` [ "Launch" ]
+
+    it "WHERE with = ANY() array param" do
+      rows <- from usersTable
+        # select @"name"
+        # where_ @"id = ANY($id)"
+        # runQuery conn { id: [ 1, 2 ] }
+      Array.length rows `shouldSatisfy` (_ >= 1)
 
     it "complex where with multiple params" do
       rows <- from usersTable

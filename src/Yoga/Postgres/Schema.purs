@@ -5,6 +5,7 @@ import Prelude
 import Data.Array as Array
 import Data.Array (intercalate, mapWithIndex, foldl)
 import Data.DateTime (DateTime)
+import Data.JSDate as JSDate
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Nullable (toNullable)
@@ -69,6 +70,9 @@ data DefaultBool a
 newtype Jsonb = Jsonb Foreign
 
 derive instance Newtype Jsonb _
+
+instance ReadForeign Jsonb where
+  readImpl = pure <<< Jsonb
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
@@ -884,8 +888,8 @@ else instance FlushWhereWord "IN" currentType cols paramsIn (Array currentType) 
 else instance FlushWhereWord "TRUE" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "FALSE" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "BETWEEN" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "ANY" currentType cols paramsIn currentType paramsIn
-else instance FlushWhereWord "ALL" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "ANY" currentType cols paramsIn (Array currentType) paramsIn
+else instance FlushWhereWord "ALL" currentType cols paramsIn (Array currentType) paramsIn
 else instance FlushWhereWord "CAST" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "AS" currentType cols paramsIn currentType paramsIn
 else instance FlushWhereWord "EXISTS" currentType cols paramsIn currentType paramsIn
@@ -1068,6 +1072,8 @@ class FieldToPGValue a where
 
 instance FieldToPGValue a => FieldToPGValue (Maybe a) where
   fieldToPGValue = toNullable >>> unsafeCoerce
+else instance FieldToPGValue DateTime where
+  fieldToPGValue = JSDate.fromDateTime >>> unsafeCoerce
 else instance FieldToPGValue a where
   fieldToPGValue = unsafeCoerce
 
