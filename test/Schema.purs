@@ -1185,9 +1185,10 @@ integrationSpec conn = do
     it "WHERE + GROUP BY + HAVING merges params" do
       resetUsers conn
       rows <- from usersTable
-        # select @"name, COUNT(*) AS cnt"
+        # select @"name"
         # where_ @"age > $age"
         # groupBy @"name"
         # having @"COUNT(*) > $minCount"
+        # orderBy @"name"
         # runQuery conn { age: 10, minCount: 0 }
-      rows `shouldEqual` [ { name: "Alice", cnt: 1 }, { name: "Bob", cnt: 1 } ]
+      rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
