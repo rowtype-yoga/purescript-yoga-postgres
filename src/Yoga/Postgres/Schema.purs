@@ -1077,11 +1077,110 @@ set rec _ = Q { sql, values }
 -- ON CONFLICT
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ParseConflictAction: validate "DO UPDATE SET col = EXCLUDED.col, ..."
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ParseConflictAction :: Symbol -> Row Type -> Constraint
+class ParseConflictAction sym cols
+
+instance
+  ( ExtractWord sym w1 rest1
+  , ExpectKeyword w1 "DO"
+  , ExtractWord rest1 w2 rest2
+  , ExpectKeyword w2 "UPDATE"
+  , ExtractWord rest2 w3 rest3
+  , ExpectKeyword w3 "SET"
+  , ParseAssignments rest3 cols
+  ) =>
+  ParseConflictAction sym cols
+
+class ExpectKeyword :: Symbol -> Symbol -> Constraint
+class ExpectKeyword actual expected
+
+instance ExpectKeyword a a
+else instance
+  Fail (Beside (Beside (Text "Expected keyword ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
+  ExpectKeyword actual expected
+
+-- Parse "col = EXCLUDED.col, col2 = EXCLUDED.col2"
+class ParseAssignments :: Symbol -> Row Type -> Constraint
+class ParseAssignments sym cols
+
+instance ParseAssignments "" cols
+else instance
+  ( ExtractWord sym colName rest1
+  , Row.Cons colName colType colRest cols
+  , SkipSpaces rest1 rest2
+  , ExpectChar rest2 "=" rest3
+  , SkipSpaces rest3 rest4
+  , ExtractWord rest4 excRef rest5
+  , ValidateExcludedRef excRef colName
+  , SkipSpaces rest5 rest6
+  , ParseAssignmentsContinue rest6 cols
+  ) =>
+  ParseAssignments sym cols
+
+class ParseAssignmentsContinue :: Symbol -> Row Type -> Constraint
+class ParseAssignmentsContinue sym cols
+
+instance ParseAssignmentsContinue "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ParseAssignmentsContinueByHead h t cols
+  ) =>
+  ParseAssignmentsContinue sym cols
+
+class ParseAssignmentsContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ParseAssignmentsContinueByHead head tail cols
+
+instance
+  ( SkipSpaces tail rest
+  , ParseAssignments rest cols
+  ) =>
+  ParseAssignmentsContinueByHead "," tail cols
+
+class ExpectChar :: Symbol -> Symbol -> Symbol -> Constraint
+class ExpectChar sym char rest | sym char -> rest
+
+instance
+  ( Symbol.Cons h t sym
+  , ExpectCharMatch h t char rest
+  ) =>
+  ExpectChar sym char rest
+
+class ExpectCharMatch :: Symbol -> Symbol -> Symbol -> Symbol -> Constraint
+class ExpectCharMatch head tail expected rest | head tail expected -> rest
+
+instance ExpectCharMatch c tail c tail
+else instance
+  Fail (Beside (Beside (Text "Expected '") (Quote expected)) (Beside (Text "' but got '") (Quote head))) =>
+  ExpectCharMatch head tail expected rest
+
+-- Validate "EXCLUDED.col" matches the column name
+class ValidateExcludedRef :: Symbol -> Symbol -> Constraint
+class ValidateExcludedRef ref colName
+
+instance
+  ( Symbol.Append "EXCLUDED." colName expected
+  , MatchSymbol ref expected
+  ) =>
+  ValidateExcludedRef ref colName
+
+class MatchSymbol :: Symbol -> Symbol -> Constraint
+class MatchSymbol a b
+
+instance MatchSymbol a a
+else instance
+  Fail (Beside (Beside (Text "Expected ") (Quote expected)) (Beside (Text " but got ") (Quote actual))) =>
+  MatchSymbol actual expected
+
 onConflict
   :: forall @target @action name cols result params
    . IsSymbol target
   => IsSymbol action
   => ValidateColumns target cols
+  => ParseConflictAction action cols
   => Q name cols result params
   -> Q name cols result params
 onConflict (Q q) = Q
