@@ -8,6 +8,7 @@ import Data.Tuple.Nested (type (/\))
 import Prim.Boolean (True)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
+import Type.Proxy (Proxy(..))
 import Yoga.Postgres.Schema
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -81,6 +82,25 @@ deleteSQL :: String
 deleteSQL = deleteSQLFor @UsersTable @(id :: Int)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Phase 8: Builder-style query API
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+usersTable :: Proxy UsersTable
+usersTable = Proxy
+
+builderSelectAll :: String
+builderSelectAll = from usersTable # selectAll # toSQL
+
+builderSelectCols :: String
+builderSelectCols = from usersTable # select @"name, email" # toSQL
+
+builderSelectWhere :: String
+builderSelectWhere = from usersTable # selectAll # where_ @(id :: Int) # toSQL
+
+builderSelectColsWhere :: String
+builderSelectColsWhere = from usersTable # select @"name" # where_ @(age :: Int) # toSQL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -123,3 +143,13 @@ spec = do
     describe "DELETE SQL" do
       it "generates DELETE with WHERE" do
         deleteSQL `shouldEqual` "DELETE FROM users WHERE id = $1"
+
+    describe "Builder API" do
+      it "builds SELECT *" do
+        builderSelectAll `shouldEqual` "SELECT * FROM users"
+      it "builds SELECT with columns" do
+        builderSelectCols `shouldEqual` "SELECT name, email FROM users"
+      it "builds SELECT * with WHERE" do
+        builderSelectWhere `shouldEqual` "SELECT * FROM users WHERE id = $1"
+      it "builds SELECT columns with WHERE" do
+        builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age = $1"

@@ -9,6 +9,7 @@ import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple.Nested (type (/\))
 import Prim.RowList as RL
 import Prim.RowList (class RowToList)
+import Prim.Symbol (class Cons, class Append) as Symbol
 import Type.Proxy (Proxy(..))
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -309,3 +310,35 @@ instance
     let tableName = reflectSymbol (Proxy :: Proxy name)
     let conditions = whereClauseRL (Proxy :: Proxy whereRL) 1
     "DELETE FROM " <> tableName <> " WHERE " <> intercalate " AND " conditions
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Builder-style query API
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype Q :: Symbol -> Row Type -> Type
+newtype Q name cols = Q String
+
+from :: forall name cols. Proxy (Table name cols) -> Q name cols
+from _ = Q ""
+
+selectAll :: forall name cols. IsSymbol name => Q name cols -> Q name cols
+selectAll _ = Q ("SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name))
+
+select
+  :: forall @sel name cols
+   . IsSymbol name
+  => IsSymbol sel
+  => Q name cols
+  -> Q name cols
+select _ = Q ("SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> reflectSymbol (Proxy :: Proxy name))
+
+where_
+  :: forall @whr whrRL name cols
+   . RowToList whr whrRL
+  => WhereClauseRL whrRL
+  => Q name cols
+  -> Q name cols
+where_ (Q base) = Q (base <> " WHERE " <> intercalate " AND " (whereClauseRL (Proxy :: Proxy whrRL) 1))
+
+toSQL :: forall name cols. Q name cols -> String
+toSQL (Q s) = s
