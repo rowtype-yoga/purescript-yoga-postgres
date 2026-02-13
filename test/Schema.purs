@@ -149,7 +149,57 @@ builderWhereComplex :: String
 builderWhereComplex = typedWhereComplex # toSQL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Phase 9: Query execution (type annotations prove correctness)
+-- Phase 9: Builder INSERT / UPDATE / ON CONFLICT
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedInsert
+  :: Q "users" _ () ()
+typedInsert = from usersTable # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
+
+typedInsertReturning
+  :: Q "users" _ (id :: Int, name :: String) ()
+typedInsertReturning = from usersTable
+  # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
+  # returning @"id, name"
+
+typedSet
+  :: Q "users" _ () ()
+typedSet = from usersTable # set { name: "Bob" }
+
+typedSetWhere
+  :: Q "users" _ () (id :: Int)
+typedSetWhere = from usersTable # set { name: "Bob" } # where_ @"id = $id"
+
+typedSetReturning
+  :: Q "users" _ (id :: Int, name :: String, email :: String) (id :: Int)
+typedSetReturning = from usersTable
+  # set { name: "Bob" }
+  # where_ @"id = $id"
+  # returning @"id, name, email"
+
+typedUpsert
+  :: Q "users" _ () ()
+typedUpsert = from usersTable
+  # insert { name: "Alice", email: "alice@example.com", age: Nothing :: Maybe Int }
+  # onConflictDoNothing @"email"
+
+builderInsert :: String
+builderInsert = typedInsert # toSQL
+
+builderInsertReturning :: String
+builderInsertReturning = typedInsertReturning # toSQL
+
+builderSet :: String
+builderSet = typedSet # toSQL
+
+builderSetWhere :: String
+builderSetWhere = typedSetWhere # toSQL
+
+builderUpsert :: String
+builderUpsert = typedUpsert # toSQL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Phase 10: Query execution (type annotations prove correctness)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 queryAllUsers :: PG.Connection -> Aff (Array { id :: Int, name :: String, email :: String, age :: Maybe Int })
@@ -228,6 +278,25 @@ spec = do
       it "builds complex WHERE" do
         builderWhereComplex `shouldEqual` "SELECT * FROM users WHERE name = $name AND age > $age"
 
+    describe "Builder INSERT" do
+      it "builds INSERT" do
+        builderInsert `shouldSatisfy` contains (Pattern "INSERT INTO users")
+        builderInsert `shouldSatisfy` contains (Pattern "(age, email, name)")
+        builderInsert `shouldSatisfy` contains (Pattern "VALUES ($1, $2, $3)")
+      it "builds INSERT with RETURNING" do
+        builderInsertReturning `shouldSatisfy` contains (Pattern "INSERT INTO users")
+        builderInsertReturning `shouldSatisfy` contains (Pattern "RETURNING id, name")
+
+    describe "Builder UPDATE" do
+      it "builds UPDATE SET" do
+        builderSet `shouldEqual` "UPDATE users SET name = $1"
+      it "builds UPDATE SET with WHERE" do
+        builderSetWhere `shouldEqual` "UPDATE users SET name = $1 WHERE id = $id"
+
+    describe "Builder ON CONFLICT" do
+      it "builds INSERT ON CONFLICT DO NOTHING" do
+        builderUpsert `shouldSatisfy` contains (Pattern "ON CONFLICT (email) DO NOTHING")
+
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
   describe "Builder query execution" do
@@ -276,3 +345,66 @@ integrationSpec conn = do
         # runQuery conn { name: "Bob", age: 20 }
       Array.length rows `shouldEqual` 1
       (map _.age rows) `shouldEqual` [ Just 30 ]
+
+  describe "Builder insert execution" do
+    it "inserts a row and returns count" do
+      count <- from usersTable
+        # insert { name: "Charlie", email: "charlie@example.com", age: Just 28 }
+        # runExecute conn {}
+      count `shouldEqual` 1
+      rows <- from usersTable
+        # select @"name"
+        # where_ @"name = $name"
+        # runQuery conn { name: "Charlie" }
+      Array.length rows `shouldEqual` 1
+
+    it "inserts with RETURNING" do
+      rows <- from usersTable
+        # insert { name: "Diana", email: "diana@example.com", age: Nothing }
+        # returning @"id, name, email"
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Diana" ]
+      (map _.email rows) `shouldEqual` [ "diana@example.com" ]
+
+  describe "Builder update execution" do
+    it "updates a row" do
+      count <- from usersTable
+        # set { email: "alice-updated@example.com" }
+        # where_ @"name = $name"
+        # runExecute conn { name: "Alice" }
+      count `shouldEqual` 1
+      result <- from usersTable
+        # select @"email"
+        # where_ @"name = $name"
+        # runQueryOne conn { name: "Alice" }
+      case result of
+        Just r -> r.email `shouldEqual` "alice-updated@example.com"
+        Nothing -> shouldEqual "found" "nothing"
+
+    it "updates with RETURNING" do
+      rows <- from usersTable
+        # set { age: Just 99 }
+        # where_ @"name = $name"
+        # returning @"name, age"
+        # runQuery conn { name: "Bob" }
+      Array.length rows `shouldEqual` 1
+      (map _.age rows) `shouldEqual` [ Just 99 ]
+
+  describe "Builder upsert execution" do
+    it "ON CONFLICT DO NOTHING skips duplicate" do
+      count <- from usersTable
+        # insert { name: "Duplicate", email: "bob@example.com", age: Nothing }
+        # onConflictDoNothing @"email"
+        # runExecute conn {}
+      count `shouldEqual` 0
+
+    it "ON CONFLICT DO UPDATE" do
+      rows <- from usersTable
+        # insert { name: "Updated", email: "bob@example.com", age: Just 40 }
+        # onConflict @"email" @"DO UPDATE SET name = EXCLUDED.name, age = EXCLUDED.age"
+        # returning @"name, age"
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Updated" ]
+      (map _.age rows) `shouldEqual` [ Just 40 ]
