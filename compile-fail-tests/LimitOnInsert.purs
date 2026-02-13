@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # insert { name: "A", email: "a@b.com" } # limit 10
+bad = from usersTable # insert { name: "A", email: "a@b.com" } # limit @"10"

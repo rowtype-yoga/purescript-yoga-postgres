@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # selectAll # where_ @"age > $n" # limitParam @"n"
+bad = from usersTable # selectAll # where_ @"age > $n" # limit @"$n"

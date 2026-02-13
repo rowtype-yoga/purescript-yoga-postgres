@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # selectAll # limit 10 # where_ @"id = $id"
+bad = from usersTable # selectAll # limit @"10" # where_ @"id = $id"

@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # selectAll # limit 10 # limit 5
+bad = from usersTable # selectAll # limit @"10" # limit @"5"

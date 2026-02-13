@@ -1828,49 +1828,54 @@ having
   -> Q tables result params' stage'
 having (Q q) = Q (q { sql = q.sql <> " HAVING " <> reflectSymbol (Proxy :: Proxy cond) })
 
-limit
-  :: forall tables result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "limit" stage
-  => Row.Cons "limit" Unit stage stage'
-  => Int
-  -> Q tables result params stage
-  -> Q tables result params stage'
-limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
+class IsLimitParam :: Symbol -> Symbol -> Boolean -> Constraint
+class IsLimitParam head tail isParam | head tail -> isParam
 
-limitParam
-  :: forall @name tables result params params' stage stage'
-   . IsSymbol name
-  => Row.Lacks name params
-  => Row.Cons name Int params params'
+instance IsLimitParam "$" tail True
+else instance IsLimitParam head tail False
+
+class ParseLimitOffsetParams :: Boolean -> Symbol -> Row Type -> Row Type -> Constraint
+class ParseLimitOffsetParams isParam name params params' | isParam name params -> params'
+
+instance
+  ( Row.Lacks name params
+  , Row.Cons name Int params params'
+  ) =>
+  ParseLimitOffsetParams True name params params'
+
+instance ParseLimitOffsetParams False name params params
+
+class ParseLimitOffset :: Symbol -> Row Type -> Row Type -> Constraint
+class ParseLimitOffset sym params params' | sym params -> params'
+
+instance
+  ( Symbol.Cons head tail sym
+  , IsLimitParam head tail isParam
+  , ParseLimitOffsetParams isParam tail params params'
+  ) =>
+  ParseLimitOffset sym params params'
+
+limit
+  :: forall @sym tables result params params' stage stage'
+   . ParseLimitOffset sym params params'
+  => IsSymbol sym
   => HasClause "select" stage
   => Row.Lacks "limit" stage
   => Row.Cons "limit" Unit stage stage'
   => Q tables result params stage
   -> Q tables result params' stage'
-limitParam (Q q) = Q (q { sql = q.sql <> " LIMIT $" <> reflectSymbol (Proxy :: Proxy name) })
+limit (Q q) = Q (q { sql = q.sql <> " LIMIT " <> reflectSymbol (Proxy :: Proxy sym) })
 
 offset
-  :: forall tables result params stage stage'
-   . HasClause "select" stage
-  => Row.Lacks "offset" stage
-  => Row.Cons "offset" Unit stage stage'
-  => Int
-  -> Q tables result params stage
-  -> Q tables result params stage'
-offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
-
-offsetParam
-  :: forall @name tables result params params' stage stage'
-   . IsSymbol name
-  => Row.Lacks name params
-  => Row.Cons name Int params params'
+  :: forall @sym tables result params params' stage stage'
+   . ParseLimitOffset sym params params'
+  => IsSymbol sym
   => HasClause "select" stage
   => Row.Lacks "offset" stage
   => Row.Cons "offset" Unit stage stage'
   => Q tables result params stage
   -> Q tables result params' stage'
-offsetParam (Q q) = Q (q { sql = q.sql <> " OFFSET $" <> reflectSymbol (Proxy :: Proxy name) })
+offset (Q q) = Q (q { sql = q.sql <> " OFFSET " <> reflectSymbol (Proxy :: Proxy sym) })
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- INSERT builder

@@ -270,7 +270,7 @@ typedOrderByDesc = from usersTable # selectAll # orderBy @"name DESC, age ASC"
 
 typedLimitOffset
   :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) () _
-typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit 10 # offset 5
+typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit @"10" # offset @"5"
 
 typedInArray
   :: Q _ (age :: Maybe Int, email :: String, id :: Int, name :: String) (id :: Array Int) _
@@ -381,8 +381,8 @@ typedJoinLimitOffset = from usersTable
   # innerJoin @"users.id = posts.user_id" postsTable
   # select @"users.name, posts.title"
   # orderBy @"users.name"
-  # limit 10
-  # offset 5
+  # limit @"10"
+  # offset @"5"
 
 typedUnqualifiedSelect
   :: Q _ (title :: String, name :: String) () _
@@ -463,7 +463,7 @@ typedFullAggregate = from usersTable
   # groupBy @"name"
   # having @"COUNT(*) > $min"
   # orderBy @"name"
-  # limit 10
+  # limit @"10"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Table aliases
@@ -536,18 +536,18 @@ typedNtile = from usersTable
 
 typedLimitParam
   :: Q _ (name :: String) (n :: Int) _
-typedLimitParam = from usersTable # select @"name" # limitParam @"n"
+typedLimitParam = from usersTable # select @"name" # limit @"$n"
 
 typedOffsetParam
   :: Q _ (name :: String) (n :: Int) _
-typedOffsetParam = from usersTable # select @"name" # offsetParam @"n"
+typedOffsetParam = from usersTable # select @"name" # offset @"$n"
 
 typedLimitParamWithWhere
   :: Q _ (name :: String) (age :: Int, n :: Int) _
 typedLimitParamWithWhere = from usersTable
   # select @"name"
   # where_ @"age > $age"
-  # limitParam @"n"
+  # limit @"$n"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- UNION / INTERSECT / EXCEPT
@@ -575,7 +575,7 @@ typedUnionOrderByLimit =
   (from usersTable # select @"name")
     `union` (from usersTable # select @"name")
     # orderBy @"name"
-    # limit 10
+    # limit @"10"
 
 typedIntersect
   :: Q _ (name :: String) () _
@@ -946,7 +946,7 @@ integrationSpec conn = do
       rows <- from usersTable
         # selectAll
         # orderBy @"name"
-        # limit 1
+        # limit @"1"
         # runQuery conn {}
       Array.length rows `shouldEqual` 1
 
@@ -954,8 +954,8 @@ integrationSpec conn = do
       rows <- from usersTable
         # select @"name"
         # orderBy @"name ASC"
-        # limit 1
-        # offset 1
+        # limit @"1"
+        # offset @"1"
         # runQuery conn {}
       Array.length rows `shouldEqual` 1
       allRows <- from usersTable
@@ -1018,7 +1018,7 @@ integrationSpec conn = do
         # innerJoin @"users.id = posts.user_id" postsTable
         # select @"users.name, posts.title"
         # orderBy @"users.name ASC"
-        # limit 1
+        # limit @"1"
         # runQuery conn {}
       Array.length rows `shouldEqual` 1
       (map _.name rows) `shouldEqual` [ "Alice" ]
@@ -1055,14 +1055,14 @@ integrationSpec conn = do
   describe "Parameterized LIMIT/OFFSET execution" do
     it "parameterized LIMIT restricts rows" do
       rows <- from usersTable # select @"name" # orderBy @"name"
-        # limitParam @"n"
+        # limit @"$n"
         # runQuery conn { n: 1 }
       Array.length rows `shouldEqual` 1
 
     it "parameterized OFFSET skips rows" do
       rows <- from usersTable # select @"name" # orderBy @"name"
-        # limitParam @"n"
-        # offsetParam @"off"
+        # limit @"$n"
+        # offset @"$off"
         # runQuery conn { n: 1, off: 1 }
       Array.length rows `shouldEqual` 1
 
@@ -1070,7 +1070,7 @@ integrationSpec conn = do
       rows <- from usersTable # select @"name"
         # where_ @"age > $age"
         # orderBy @"name"
-        # limitParam @"n"
+        # limit @"$n"
         # runQuery conn { age: 0, n: 1 }
       Array.length rows `shouldEqual` 1
 
@@ -1113,10 +1113,10 @@ integrationSpec conn = do
 
     it "UNION with ORDER BY and LIMIT" do
       rows <-
-        (from usersTable # select @"name")
-          `union` (from usersTable # select @"name")
+        from usersTable # select @"name"
+          # union (from usersTable # select @"name")
           # orderBy @"name"
-          # limit 1
+          # limit @"1"
           # runQuery conn {}
       Array.length rows `shouldEqual` 1
       (map _.name rows) `shouldEqual` [ "Alice" ]
