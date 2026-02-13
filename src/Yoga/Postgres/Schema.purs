@@ -765,25 +765,49 @@ instance
 
 else instance
   ( Symbol.Cons h t tail
-  , ExtractUntilParenGo h t "" args afterParen
+  , ExtractUntilParenGo h t "" Z args afterParen
   ) =>
   ExtractUntilParen tail args afterParen
 
-class ExtractUntilParenGo :: Symbol -> Symbol -> Symbol -> Symbol -> Symbol -> Constraint
-class ExtractUntilParenGo head tail acc args afterParen | head tail acc -> args afterParen
+-- Peano depth counter for nested parentheses
+data Z
+data S :: Type -> Type
+data S n
 
-instance ExtractUntilParenGo ")" tail acc acc tail
+class ExtractUntilParenGo :: Symbol -> Symbol -> Symbol -> Type -> Symbol -> Symbol -> Constraint
+class ExtractUntilParenGo head tail acc depth args afterParen | head tail acc depth -> args afterParen
 
+-- ) at depth zero: done
+instance ExtractUntilParenGo ")" tail acc Z acc tail
+
+-- ) at depth > 0: decrement depth, keep going
+else instance
+  ( Symbol.Append acc ")" acc'
+  , Symbol.Cons nextH nextT tail
+  , ExtractUntilParenGo nextH nextT acc' n args afterParen
+  ) =>
+  ExtractUntilParenGo ")" tail acc (S n) args afterParen
+
+-- ( : increment depth, keep going
+else instance
+  ( Symbol.Append acc "(" acc'
+  , Symbol.Cons nextH nextT tail
+  , ExtractUntilParenGo nextH nextT acc' (S depth) args afterParen
+  ) =>
+  ExtractUntilParenGo "(" tail acc depth args afterParen
+
+-- Unclosed paren at end of input
 else instance
   Fail (Text "Unclosed parenthesis in SELECT clause") =>
-  ExtractUntilParenGo h "" acc args afterParen
+  ExtractUntilParenGo h "" acc depth args afterParen
 
+-- Any other char: accumulate
 else instance
   ( Symbol.Append acc h acc'
   , Symbol.Cons nextH nextT tail
-  , ExtractUntilParenGo nextH nextT acc' args afterParen
+  , ExtractUntilParenGo nextH nextT acc' depth args afterParen
   ) =>
-  ExtractUntilParenGo h tail acc args afterParen
+  ExtractUntilParenGo h tail acc depth args afterParen
 
 -- Resolve aggregate argument: "*" -> Star, column ref -> unwrapped type
 data Star

@@ -121,16 +121,14 @@ overNonexistentColumn = from usersTable
   # select @"name, ROW_NUMBER() OVER (ORDER BY nonexistent_column) AS rn"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- EDGE CASE 8: Nested parens in aggregate args
--- ExtractUntilParen stops at the FIRST ), not matching brackets
--- COALESCE(NULLIF(x, 0), 1) would break parsing
+-- EDGE CASE 8: Nested parens in aggregate args (FIXED)
+-- ExtractUntilParen now uses Peano depth counter for nesting
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- Uncomment to test:
--- nestedParensInAggregate
---   :: Q _ (name :: String, val :: Int) () _
--- nestedParensInAggregate = from usersTable
---   # select @"name, COALESCE(age, 0) AS val"
+coalesceSimple
+  :: Q _ (name :: String, val :: Int) () _
+coalesceSimple = from usersTable
+  # select @"name, COALESCE(age, 0) AS val"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 9: INSERT on table with all auto-generated columns

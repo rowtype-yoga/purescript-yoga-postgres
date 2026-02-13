@@ -627,6 +627,11 @@ typedNestedParens
 typedNestedParens = from usersTable # selectAll
   # where_ @"(age > $a OR age < $b) AND name = $name"
 
+typedCoalesceSelect
+  :: Q _ (name :: String, val :: Int) () _
+typedCoalesceSelect = from usersTable
+  # select @"name, COALESCE(age, 0) AS val"
+
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -753,6 +758,8 @@ spec = do
         (typedFullAggregate # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $min ORDER BY name LIMIT 10"
       it "builds WHERE + GROUP BY + HAVING" do
         (typedWhereGroupByHaving # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users WHERE age > $age GROUP BY name HAVING COUNT(*) > $minCount"
+      it "builds COALESCE with nested parens" do
+        (typedCoalesceSelect # toSQL) `shouldEqual` "SELECT name, COALESCE(age, 0) AS val FROM users"
 
     describe "Builder window functions" do
       it "builds ROW_NUMBER() OVER" do
