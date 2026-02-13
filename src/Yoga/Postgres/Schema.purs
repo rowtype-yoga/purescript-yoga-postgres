@@ -13,6 +13,7 @@ import Prim.RowList (class RowToList)
 import Prim.Symbol (class Cons, class Append) as Symbol
 import Prim.TypeError (class Fail, Beside, Text, Quote)
 import Type.Proxy (Proxy(..))
+import Type.RowList (class ListToRow)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Core phantom types
@@ -591,33 +592,318 @@ class SkipSpacesGo head tail result | head tail -> result
 instance SkipSpaces tail result => SkipSpacesGo " " tail result
 else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
 
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Type utilities
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class UnwrapMaybe :: Type -> Type -> Constraint
+class UnwrapMaybe a b | a -> b
+
+instance UnwrapMaybe (Maybe a) a
+else instance UnwrapMaybe a a
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- StripColumns: (name :: Column String None, ...) → (name :: String, ...)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class StripColumnsRL :: RL.RowList Type -> RL.RowList Type -> Constraint
+class StripColumnsRL rl out | rl -> out
+
+instance StripColumnsRL RL.Nil RL.Nil
+instance StripColumnsRL tail out' => StripColumnsRL (RL.Cons name (Column typ constraints) tail) (RL.Cons name typ out')
+
+class StripColumns :: Row Type -> Row Type -> Constraint
+class StripColumns cols result | cols -> result
+
+instance (RowToList cols rl, StripColumnsRL rl outRL, ListToRow outRL result) => StripColumns cols result
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ParseSelect: parse "name, email AS e" → RowList (name :: String, e :: String)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ParseSelect :: Symbol -> Row Type -> Row Type -> Constraint
+class ParseSelect sym cols result | sym cols -> result
+
+instance ParseSelect "" cols ()
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectGo h t "" cols RL.Nil outRL
+  , ListToRow outRL result
+  ) =>
+  ParseSelect sym cols result
+
+class ParseSelectGo :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectGo head tail acc cols accRL outRL | head tail acc cols accRL -> outRL
+
+-- Comma: emit column, continue
+instance
+  ( Row.Cons acc (Column typ constraints) rest cols
+  , SkipSpaces tail rest'
+  , ParseSelectContinue rest' cols (RL.Cons acc typ accRL) outRL
+  ) =>
+  ParseSelectGo "," tail acc cols accRL outRL
+
+-- Space: column name done, check for AS or comma
+else instance
+  ( SkipSpaces tail rest
+  , ParseSelectAfterCol acc rest cols accRL outRL
+  ) =>
+  ParseSelectGo " " tail acc cols accRL outRL
+
+-- End of string: emit final column
+else instance
+  ( Symbol.Append acc h acc'
+  , Row.Cons acc' (Column typ constraints) rest cols
+  ) =>
+  ParseSelectGo h "" acc cols accRL (RL.Cons acc' typ accRL)
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ParseSelectGo nextH nextT acc' cols accRL outRL
+  ) =>
+  ParseSelectGo h tail acc cols accRL outRL
+
+-- After column name + space: AS alias, comma, or end
+class ParseSelectAfterCol :: Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectAfterCol colName rest cols accRL outRL | colName rest cols accRL -> outRL
+
+-- End: emit column with its own name
+instance
+  ( Row.Cons colName (Column typ constraints) rest' cols
+  ) =>
+  ParseSelectAfterCol colName "" cols accRL (RL.Cons colName typ accRL)
+
+-- Non-empty: branch on first char
+else instance
+  ( Symbol.Cons h t rest
+  , ParseSelectAfterColByHead h t colName cols accRL outRL
+  ) =>
+  ParseSelectAfterCol colName rest cols accRL outRL
+
+class ParseSelectAfterColByHead :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectAfterColByHead head tail colName cols accRL outRL | head tail colName cols accRL -> outRL
+
+-- Comma: emit column with own name, continue
+instance
+  ( Row.Cons colName (Column typ constraints) rest cols
+  , SkipSpaces tail rest'
+  , ParseSelectContinue rest' cols (RL.Cons colName typ accRL) outRL
+  ) =>
+  ParseSelectAfterColByHead "," tail colName cols accRL outRL
+
+-- Otherwise (AS ...): extract word
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , ParseSelectHandleAS word afterWord colName cols accRL outRL
+  ) =>
+  ParseSelectAfterColByHead h t colName cols accRL outRL
+
+-- Handle AS keyword: extract alias name
+class ParseSelectHandleAS :: Symbol -> Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectHandleAS keyword afterKeyword colName cols accRL outRL | keyword afterKeyword colName cols accRL -> outRL
+
+instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , Row.Cons colName (Column typ constraints) rest cols
+  , SkipSpaces afterAlias rest'
+  , ParseSelectExpectCommaOrEnd rest' cols (RL.Cons alias typ accRL) outRL
+  ) =>
+  ParseSelectHandleAS "AS" afterKeyword colName cols accRL outRL
+
+else instance
+  ( ExtractWord afterKeyword alias afterAlias
+  , Row.Cons colName (Column typ constraints) rest cols
+  , SkipSpaces afterAlias rest'
+  , ParseSelectExpectCommaOrEnd rest' cols (RL.Cons alias typ accRL) outRL
+  ) =>
+  ParseSelectHandleAS "as" afterKeyword colName cols accRL outRL
+
+class ParseSelectExpectCommaOrEnd :: Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectExpectCommaOrEnd sym cols accRL outRL | sym cols accRL -> outRL
+
+instance ParseSelectExpectCommaOrEnd "" cols accRL accRL
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectExpectCommaOrEndByHead h t cols accRL outRL
+  ) =>
+  ParseSelectExpectCommaOrEnd sym cols accRL outRL
+
+class ParseSelectExpectCommaOrEndByHead :: Symbol -> Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectExpectCommaOrEndByHead head tail cols accRL outRL | head tail cols accRL -> outRL
+
+instance
+  ( SkipSpaces tail rest
+  , ParseSelectContinue rest cols accRL outRL
+  ) =>
+  ParseSelectExpectCommaOrEndByHead "," tail cols accRL outRL
+
+-- Continue parsing more columns
+class ParseSelectContinue :: Symbol -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseSelectContinue sym cols accRL outRL | sym cols accRL -> outRL
+
+instance ParseSelectContinue "" cols accRL accRL
+else instance
+  ( Symbol.Cons h t sym
+  , ParseSelectGo h t "" cols accRL outRL
+  ) =>
+  ParseSelectContinue sym cols accRL outRL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ParseWhere: parse "id = $id AND age > $age" → params (id :: Int, age :: Int)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+-- Sentinel type for "no current column type yet"
+data NoType
+
+class ParseWhere :: Symbol -> Row Type -> Row Type -> Constraint
+class ParseWhere sym cols params | sym cols -> params
+
+instance ParseWhere "" cols ()
+else instance
+  ( Symbol.Cons h t sym
+  , ParseWhereGo h t "" NoType cols RL.Nil outRL
+  , ListToRow outRL params
+  ) =>
+  ParseWhere sym cols params
+
+class ParseWhereGo :: Symbol -> Symbol -> Symbol -> Type -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseWhereGo head tail acc currentType cols paramsIn paramsOut | head tail acc currentType cols paramsIn -> paramsOut
+
+-- Space: flush word, continue
+instance
+  ( FlushWhereWord acc currentType cols paramsIn currentType' paramsOut'
+  , SkipSpaces tail rest
+  , ParseWhereContinue rest currentType' cols paramsOut' paramsOut
+  ) =>
+  ParseWhereGo " " tail acc currentType cols paramsIn paramsOut
+
+-- Operators: flush word, continue
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "=" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ">" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "<" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "!" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo "(" tail acc currentType cols paramsIn paramsOut
+else instance (FlushWhereWord acc currentType cols paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' cols paramsOut' paramsOut) => ParseWhereGo ")" tail acc currentType cols paramsIn paramsOut
+
+-- End of string: flush final word
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushWhereWord acc' currentType cols paramsIn _ct paramsOut
+  ) =>
+  ParseWhereGo h "" acc currentType cols paramsIn paramsOut
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ParseWhereGo nextH nextT acc' currentType cols paramsIn paramsOut
+  ) =>
+  ParseWhereGo h tail acc currentType cols paramsIn paramsOut
+
+class ParseWhereContinue :: Symbol -> Type -> Row Type -> RL.RowList Type -> RL.RowList Type -> Constraint
+class ParseWhereContinue sym currentType cols paramsIn paramsOut | sym currentType cols paramsIn -> paramsOut
+
+instance ParseWhereContinue "" currentType cols paramsIn paramsIn
+else instance
+  ( Symbol.Cons h t sym
+  , ParseWhereGo h t "" currentType cols paramsIn paramsOut
+  ) =>
+  ParseWhereContinue sym currentType cols paramsIn paramsOut
+
+-- Flush a word in WHERE context: updates currentType and/or emits params
+class FlushWhereWord :: Symbol -> Type -> Row Type -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWord word currentType cols paramsIn currentTypeOut paramsOut | word currentType cols paramsIn -> currentTypeOut paramsOut
+
+-- Empty: pass through
+instance FlushWhereWord "" currentType cols paramsIn currentType paramsIn
+
+-- SQL keywords: pass through
+else instance FlushWhereWord "AND" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "OR" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "NOT" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "IS" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "NULL" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "LIKE" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "ILIKE" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "IN" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "TRUE" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "FALSE" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "BETWEEN" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "ANY" currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWord "ALL" currentType cols paramsIn currentType paramsIn
+
+-- Non-keyword: check first char
+else instance
+  ( Symbol.Cons head rest word
+  , FlushWhereWordByHead head word currentType cols paramsIn currentTypeOut paramsOut
+  ) =>
+  FlushWhereWord word currentType cols paramsIn currentTypeOut paramsOut
+
+class FlushWhereWordByHead :: Symbol -> Symbol -> Type -> Row Type -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordByHead head word currentType cols paramsIn currentTypeOut paramsOut | head word currentType cols paramsIn -> currentTypeOut paramsOut
+
+-- $param: extract param name (rest after $), emit with currentType
+instance
+  ( Symbol.Cons "$" paramName word
+  ) =>
+  FlushWhereWordByHead "$" word currentType cols paramsIn currentType (RL.Cons paramName currentType paramsIn)
+
+-- Digit: number literal, pass through
+else instance FlushWhereWordByHead "0" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "1" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "2" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "3" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "4" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "5" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "6" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "7" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "8" word currentType cols paramsIn currentType paramsIn
+else instance FlushWhereWordByHead "9" word currentType cols paramsIn currentType paramsIn
+
+-- Column name: look up type, strip Maybe, set as currentType
+else instance
+  ( Row.Cons word (Column typ constraints) rest cols
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordByHead head word currentType cols paramsIn unwrapped paramsIn
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Query builder
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-newtype Q :: Symbol -> Row Type -> Type
-newtype Q name cols = Q String
+newtype Q :: Symbol -> Row Type -> Row Type -> Row Type -> Type
+newtype Q name cols result params = Q String
 
-from :: forall name cols. Proxy (Table name cols) -> Q name cols
+from :: forall name cols. Proxy (Table name cols) -> Q name cols () ()
 from _ = Q ""
 
-selectAll :: forall name cols. IsSymbol name => Q name cols -> Q name cols
+selectAll
+  :: forall name cols result r p
+   . IsSymbol name
+  => StripColumns cols result
+  => Q name cols r p
+  -> Q name cols result p
 selectAll _ = Q ("SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name))
 
 select
-  :: forall @sel name cols
+  :: forall @sel name cols result r p
    . IsSymbol name
   => IsSymbol sel
-  => ValidateColumns sel cols
-  => Q name cols
-  -> Q name cols
+  => ParseSelect sel cols result
+  => Q name cols r p
+  -> Q name cols result p
 select _ = Q ("SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> reflectSymbol (Proxy :: Proxy name))
 
 where_
-  :: forall @whr name cols
+  :: forall @whr name cols result params p
    . IsSymbol whr
-  => ValidateWhere whr cols
-  => Q name cols
-  -> Q name cols
+  => ParseWhere whr cols params
+  => Q name cols result p
+  -> Q name cols result params
 where_ (Q base) = Q (base <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr))
 
-toSQL :: forall name cols. Q name cols -> String
+toSQL :: forall name cols result params. Q name cols result params -> String
 toSQL (Q s) = s

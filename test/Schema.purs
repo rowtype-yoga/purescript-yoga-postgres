@@ -88,23 +88,61 @@ deleteSQL = deleteSQLFor @UsersTable @(id :: Int)
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
+-- Type annotations prove the compiler tracks result and param types
+
+typedSelectAll
+  :: Q "users" _
+       (age :: Maybe Int, email :: String, id :: Int, name :: String)
+       ()
+typedSelectAll = from usersTable # selectAll
+
+typedSelectCols
+  :: Q "users" _
+       (name :: String, email :: String)
+       ()
+typedSelectCols = from usersTable # select @"name, email"
+
+typedSelectAlias
+  :: Q "users" _
+       (name :: String, e :: String)
+       ()
+typedSelectAlias = from usersTable # select @"name, email AS e"
+
+typedWhere
+  :: Q "users" _
+       (age :: Maybe Int, email :: String, id :: Int, name :: String)
+       (id :: Int)
+typedWhere = from usersTable # selectAll # where_ @"id = $id"
+
+typedWhereComplex
+  :: Q "users" _
+       (age :: Maybe Int, email :: String, id :: Int, name :: String)
+       (name :: String, age :: Int)
+typedWhereComplex = from usersTable # selectAll # where_ @"name = $name AND age > $age"
+
+typedSelectColsWhere
+  :: Q "users" _
+       (name :: String)
+       (age :: Int)
+typedSelectColsWhere = from usersTable # select @"name" # where_ @"age > $age"
+
 builderSelectAll :: String
-builderSelectAll = from usersTable # selectAll # toSQL
+builderSelectAll = typedSelectAll # toSQL
 
 builderSelectCols :: String
-builderSelectCols = from usersTable # select @"name, email" # toSQL
-
-builderSelectWhere :: String
-builderSelectWhere = from usersTable # selectAll # where_ @"id = $1" # toSQL
-
-builderSelectColsWhere :: String
-builderSelectColsWhere = from usersTable # select @"name" # where_ @"age > $1" # toSQL
+builderSelectCols = typedSelectCols # toSQL
 
 builderSelectAlias :: String
-builderSelectAlias = from usersTable # select @"name AS n, email AS e" # toSQL
+builderSelectAlias = typedSelectAlias # toSQL
+
+builderSelectWhere :: String
+builderSelectWhere = typedWhere # toSQL
+
+builderSelectColsWhere :: String
+builderSelectColsWhere = typedSelectColsWhere # toSQL
 
 builderWhereComplex :: String
-builderWhereComplex = from usersTable # selectAll # where_ @"name = $1 AND age > $2" # toSQL
+builderWhereComplex = typedWhereComplex # toSQL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -156,10 +194,10 @@ spec = do
       it "builds SELECT with columns" do
         builderSelectCols `shouldEqual` "SELECT name, email FROM users"
       it "builds SELECT * with WHERE" do
-        builderSelectWhere `shouldEqual` "SELECT * FROM users WHERE id = $1"
+        builderSelectWhere `shouldEqual` "SELECT * FROM users WHERE id = $id"
       it "builds SELECT columns with WHERE" do
-        builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age > $1"
+        builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age > $age"
       it "builds SELECT with aliases" do
-        builderSelectAlias `shouldEqual` "SELECT name AS n, email AS e FROM users"
+        builderSelectAlias `shouldEqual` "SELECT name, email AS e FROM users"
       it "builds complex WHERE" do
-        builderWhereComplex `shouldEqual` "SELECT * FROM users WHERE name = $1 AND age > $2"
+        builderWhereComplex `shouldEqual` "SELECT * FROM users WHERE name = $name AND age > $age"
