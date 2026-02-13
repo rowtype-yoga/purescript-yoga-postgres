@@ -1074,6 +1074,163 @@ set rec _ = Q { sql, values }
   values = recordValuesRL (Proxy :: Proxy setRL) rec
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- DELETE builder
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+delete
+  :: forall name cols r p
+   . IsSymbol name
+  => Q name cols r p
+  -> Q name cols () ()
+delete _ = Q { sql: "DELETE FROM " <> reflectSymbol (Proxy :: Proxy name), values: [] }
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ORDER BY / LIMIT / OFFSET
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+orderBy
+  :: forall @cols name tableCols result params
+   . IsSymbol cols
+  => ValidateOrderBy cols tableCols
+  => Q name tableCols result params
+  -> Q name tableCols result params
+orderBy (Q q) = Q (q { sql = q.sql <> " ORDER BY " <> reflectSymbol (Proxy :: Proxy cols) })
+
+limit
+  :: forall name cols result params
+   . Int
+  -> Q name cols result params
+  -> Q name cols result params
+limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
+
+offset
+  :: forall name cols result params
+   . Int
+  -> Q name cols result params
+  -> Q name cols result params
+offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
+
+-- Validate ORDER BY columns: "name, age DESC" → validate name, age exist
+class ValidateOrderBy :: Symbol -> Row Type -> Constraint
+class ValidateOrderBy sym cols
+
+instance ValidateOrderBy "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateOrderByGo h t "" cols
+  ) =>
+  ValidateOrderBy sym cols
+
+class ValidateOrderByGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
+class ValidateOrderByGo head tail acc cols
+
+-- Comma: flush column, continue
+instance
+  ( FlushOrderByWord acc cols
+  , SkipSpaces tail rest
+  , ValidateOrderBy rest cols
+  ) =>
+  ValidateOrderByGo "," tail acc cols
+
+-- Space: flush column, skip modifiers (ASC/DESC/NULLS FIRST/NULLS LAST)
+else instance
+  ( SkipSpaces tail rest
+  , FlushOrderByThenSkipModifiers acc rest cols
+  ) =>
+  ValidateOrderByGo " " tail acc cols
+
+-- End of string: flush final column
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushOrderByWord acc' cols
+  ) =>
+  ValidateOrderByGo h "" acc cols
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateOrderByGo nextH nextT acc' cols
+  ) =>
+  ValidateOrderByGo h tail acc cols
+
+class FlushOrderByWord :: Symbol -> Row Type -> Constraint
+class FlushOrderByWord word cols
+
+instance FlushOrderByWord "" cols
+else instance FlushOrderByWord "ASC" cols
+else instance FlushOrderByWord "asc" cols
+else instance FlushOrderByWord "DESC" cols
+else instance FlushOrderByWord "desc" cols
+else instance FlushOrderByWord "NULLS" cols
+else instance FlushOrderByWord "FIRST" cols
+else instance FlushOrderByWord "LAST" cols
+else instance Row.Cons word (Column typ constraints) rest cols => FlushOrderByWord word cols
+
+class FlushOrderByThenSkipModifiers :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushOrderByThenSkipModifiers colName rest cols
+
+-- End of input
+instance FlushOrderByWord colName cols => FlushOrderByThenSkipModifiers colName "" cols
+
+-- Non-empty: branch on first char
+else instance
+  ( FlushOrderByWord colName cols
+  , Symbol.Cons h t rest
+  , FlushOrderByThenSkipModifiersByHead h t cols
+  ) =>
+  FlushOrderByThenSkipModifiers colName rest cols
+
+class FlushOrderByThenSkipModifiersByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushOrderByThenSkipModifiersByHead head tail cols
+
+-- Comma: continue with next column
+instance
+  ( SkipSpaces tail rest
+  , ValidateOrderBy rest cols
+  ) =>
+  FlushOrderByThenSkipModifiersByHead "," tail cols
+
+-- Other: word is a modifier (ASC/DESC/etc), keep consuming
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWord word cols
+  , SkipSpaces afterWord rest'
+  , ValidateOrderByContinue rest' cols
+  ) =>
+  FlushOrderByThenSkipModifiersByHead h t cols
+
+class ValidateOrderByContinue :: Symbol -> Row Type -> Constraint
+class ValidateOrderByContinue sym cols
+
+instance ValidateOrderByContinue "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateOrderByContinueByHead h t cols
+  ) =>
+  ValidateOrderByContinue sym cols
+
+class ValidateOrderByContinueByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateOrderByContinueByHead head tail cols
+
+instance
+  ( SkipSpaces tail rest
+  , ValidateOrderBy rest cols
+  ) =>
+  ValidateOrderByContinueByHead "," tail cols
+
+-- More modifiers (e.g. "NULLS FIRST" after "DESC")
+else instance
+  ( Symbol.Append h t rest
+  , ExtractWord rest word afterWord
+  , FlushOrderByWord word cols
+  , SkipSpaces afterWord rest'
+  , ValidateOrderByContinue rest' cols
+  ) =>
+  ValidateOrderByContinueByHead h t cols
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ON CONFLICT
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

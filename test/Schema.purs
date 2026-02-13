@@ -198,6 +198,41 @@ builderSetWhere = typedSetWhere # toSQL
 builderUpsert :: String
 builderUpsert = typedUpsert # toSQL
 
+typedDelete
+  :: Q "users" _ () (id :: Int)
+typedDelete = from usersTable # delete # where_ @"id = $id"
+
+typedDeleteReturning
+  :: Q "users" _ (name :: String, email :: String) (id :: Int)
+typedDeleteReturning = from usersTable # delete # where_ @"id = $id" # returning @"name, email"
+
+typedOrderBy
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+typedOrderBy = from usersTable # selectAll # orderBy @"name"
+
+typedOrderByDesc
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+typedOrderByDesc = from usersTable # selectAll # orderBy @"name DESC, age ASC"
+
+typedLimitOffset
+  :: Q "users" _ (age :: Maybe Int, email :: String, id :: Int, name :: String) ()
+typedLimitOffset = from usersTable # selectAll # orderBy @"name" # limit 10 # offset 5
+
+builderDelete :: String
+builderDelete = typedDelete # toSQL
+
+builderDeleteReturning :: String
+builderDeleteReturning = typedDeleteReturning # toSQL
+
+builderOrderBy :: String
+builderOrderBy = typedOrderBy # toSQL
+
+builderOrderByDesc :: String
+builderOrderByDesc = typedOrderByDesc # toSQL
+
+builderLimitOffset :: String
+builderLimitOffset = typedLimitOffset # toSQL
+
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 10: Query execution (type annotations prove correctness)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -296,6 +331,20 @@ spec = do
     describe "Builder ON CONFLICT" do
       it "builds INSERT ON CONFLICT DO NOTHING" do
         builderUpsert `shouldSatisfy` contains (Pattern "ON CONFLICT (email) DO NOTHING")
+
+    describe "Builder DELETE" do
+      it "builds DELETE with WHERE" do
+        builderDelete `shouldEqual` "DELETE FROM users WHERE id = $id"
+      it "builds DELETE with RETURNING" do
+        builderDeleteReturning `shouldEqual` "DELETE FROM users WHERE id = $id RETURNING name, email"
+
+    describe "Builder ORDER BY / LIMIT / OFFSET" do
+      it "builds ORDER BY" do
+        builderOrderBy `shouldEqual` "SELECT * FROM users ORDER BY name"
+      it "builds ORDER BY with DESC/ASC" do
+        builderOrderByDesc `shouldEqual` "SELECT * FROM users ORDER BY name DESC, age ASC"
+      it "builds LIMIT and OFFSET" do
+        builderLimitOffset `shouldEqual` "SELECT * FROM users ORDER BY name LIMIT 10 OFFSET 5"
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
@@ -408,3 +457,54 @@ integrationSpec conn = do
       Array.length rows `shouldEqual` 1
       (map _.name rows) `shouldEqual` [ "Updated" ]
       (map _.age rows) `shouldEqual` [ Just 40 ]
+
+  describe "Builder order by / limit / offset execution" do
+    it "ORDER BY sorts results" do
+      rows <- from usersTable
+        # select @"name"
+        # orderBy @"name ASC"
+        # runQuery conn {}
+      let names = map _.name rows
+      names `shouldEqual` (Array.sort names)
+
+    it "LIMIT restricts row count" do
+      rows <- from usersTable
+        # selectAll
+        # orderBy @"name"
+        # limit 1
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+
+    it "OFFSET skips rows" do
+      rows <- from usersTable
+        # select @"name"
+        # orderBy @"name ASC"
+        # limit 1
+        # offset 1
+        # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+      allRows <- from usersTable
+        # select @"name"
+        # orderBy @"name ASC"
+        # runQuery conn {}
+      let allNames = map _.name allRows
+      (map _.name rows) `shouldEqual` (Array.take 1 (Array.drop 1 allNames))
+
+  describe "Builder delete execution" do
+    it "deletes with RETURNING" do
+      _ <- from usersTable
+        # insert { name: "ToDelete", email: "delete@example.com", age: Just 50 }
+        # runExecute conn {}
+      rows <- from usersTable
+        # delete
+        # where_ @"name = $name"
+        # returning @"name, email"
+        # runQuery conn { name: "ToDelete" }
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "ToDelete" ]
+      -- Verify actually deleted
+      result <- from usersTable
+        # selectAll
+        # where_ @"name = $name"
+        # runQueryOne conn { name: "ToDelete" }
+      result `shouldEqual` Nothing
