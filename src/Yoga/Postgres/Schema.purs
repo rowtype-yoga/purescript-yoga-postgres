@@ -5,6 +5,7 @@ import Prelude
 import Data.Array (intercalate, length, mapWithIndex)
 
 import Data.Maybe (Maybe)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple.Nested (type (/\))
 import Prim.RowList as RL
@@ -30,7 +31,7 @@ data AutoIncrement
 data Unique
 data None
 
-data Default :: forall k. k -> Type
+data Default :: Symbol -> Type
 data Default a
 
 data Now
@@ -88,6 +89,9 @@ instance RenderConstraint Unique where
 
 instance RenderConstraint None where
   renderConstraint _ = ""
+
+instance Reflectable sym String => RenderConstraint (Default sym) where
+  renderConstraint _ = "DEFAULT " <> reflectType (Proxy :: Proxy sym)
 
 instance (RenderConstraint a, RenderConstraint b) => RenderConstraint (a /\ b) where
   renderConstraint _ = do

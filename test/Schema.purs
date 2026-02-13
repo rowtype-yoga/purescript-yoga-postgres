@@ -52,20 +52,18 @@ selectWhereSQL = selectWhereSQLFor @UsersTable @(id :: Int)
 -- Phase 5: Type-level defaults
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- type ConfigTable = Table "config"
---   ( id     :: Column Int PrimaryKey
---   , active :: Column Boolean (Default True)
---   , role   :: Column String (Default "user")
---   , score  :: Column Int (Default 0)
---   )
+type ConfigTable = Table "config"
+  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
+  , active :: Column Boolean (Default "true")
+  , role :: Column String (Default "'user'")
+  , score :: Column Int (Default "0")
+  )
 
--- configDDL :: String
--- configDDL = createTableDDL @ConfigTable
--- -- Should contain: DEFAULT true, DEFAULT 'user', DEFAULT 0
+configDDL :: String
+configDDL = createTableDDL @ConfigTable
 
--- insertConfig :: PG.Connection -> Aff (Either String { id :: Int, active :: Boolean, role :: String, score :: Int })
--- insertConfig conn = insert @ConfigTable {} conn
--- -- All non-PK columns have defaults, so empty record is fine
+configInsertSQL :: String
+configInsertSQL = insertSQLFor @ConfigTable
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 6: Type-safe UPDATE
@@ -108,3 +106,11 @@ spec = do
         selectAllSQL `shouldEqual` "SELECT * FROM users"
       it "generates SELECT WHERE" do
         selectWhereSQL `shouldEqual` "SELECT * FROM users WHERE id = $1"
+
+    describe "Defaults" do
+      it "renders DEFAULT in DDL" do
+        configDDL `shouldSatisfy` contains (Pattern "active BOOLEAN NOT NULL DEFAULT true")
+        configDDL `shouldSatisfy` contains (Pattern "role TEXT NOT NULL DEFAULT 'user'")
+        configDDL `shouldSatisfy` contains (Pattern "score INTEGER NOT NULL DEFAULT 0")
+      it "skips Default columns in INSERT" do
+        configInsertSQL `shouldEqual` "INSERT INTO config () VALUES () RETURNING *"
