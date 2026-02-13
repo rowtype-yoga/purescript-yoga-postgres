@@ -428,19 +428,16 @@ spec = do
 
 main :: Effect Unit
 main = launchAff_ do
-  liftEffect $ log "\n🧪 Starting Postgres Integration Tests (with Docker)\n"
+  liftEffect $ log "\nStarting Postgres Integration Tests (with Docker)\n"
 
   bracket
-    -- Start Docker before tests
     ( do
-        liftEffect $ log "⏳ Starting Postgres and waiting for it to be ready..."
+        liftEffect $ log "Starting Postgres and waiting for it to be ready..."
         Docker.startService "packages/yoga-postgres/docker-compose.test.yml" 30
-        liftEffect $ log "✅ Postgres is ready!\n"
+        liftEffect $ log "Postgres is ready!\n"
     )
-    -- Stop Docker after tests (always runs!)
     ( \_ -> do
         Docker.stopService "packages/yoga-postgres/docker-compose.test.yml"
-        liftEffect $ log "✅ Cleanup complete\n"
+        liftEffect $ log "Cleanup complete\n"
     )
-    -- Run tests
     (\_ -> runSpec [ consoleReporter ] spec)

@@ -692,7 +692,7 @@ instance
 class ParseSelectContinue :: Symbol -> Row (Row Type) -> RL.RowList Type -> RL.RowList Type -> Constraint
 class ParseSelectContinue sym tables accRL outRL | sym tables accRL -> outRL
 
-instance ParseSelectContinue "" tables accRL accRL
+instance Fail (Text "Trailing comma in SELECT clause") => ParseSelectContinue "" tables accRL outRL
 else instance
   ( Symbol.Cons h t sym
   , ParseSelectGo h t "" tables accRL outRL
