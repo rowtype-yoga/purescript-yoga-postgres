@@ -14,7 +14,7 @@ import Yoga.Postgres.Schema
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type UsersTable = Table "users"
-  ( id :: Column Int PrimaryKey
+  ( id :: Column Int (PrimaryKey /\ AutoIncrement)
   , name :: Column String None
   , email :: Column String Unique
   , age :: Column (Maybe Int) None
@@ -34,13 +34,9 @@ ddl = createTableDDL @UsersTable
 -- Insert should require non-PK, non-default columns
 -- PK columns (id) are omitted
 -- Maybe columns (age) become optional
--- Returns all columns via RETURNING *
 
--- insertResult :: PG.Connection -> Aff (Either String { id :: Int, name :: String, email :: String, age :: Maybe Int })
--- insertResult conn = insert @UsersTable { name: "Alice", email: "alice@example.com", age: Nothing } conn
-
--- insertWithoutOptional :: PG.Connection -> Aff (Either String { id :: Int, name :: String, email :: String, age :: Maybe Int })
--- insertWithoutOptional conn = insert @UsersTable { name: "Bob", email: "bob@example.com" } conn
+insertSQL :: String
+insertSQL = insertSQLFor @UsersTable
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 4: Type-safe SELECT
@@ -95,7 +91,14 @@ spec = do
     describe "CREATE TABLE DDL" do
       it "generates correct DDL for UsersTable" do
         ddl `shouldSatisfy` contains (Pattern "CREATE TABLE users")
-        ddl `shouldSatisfy` contains (Pattern "id INTEGER NOT NULL PRIMARY KEY")
+        ddl `shouldSatisfy` contains (Pattern "id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
         ddl `shouldSatisfy` contains (Pattern "name TEXT NOT NULL")
         ddl `shouldSatisfy` contains (Pattern "email TEXT NOT NULL UNIQUE")
-        ddl `shouldSatisfy` contains (Pattern "age INTEGER")
+        ddl `shouldSatisfy` contains (Pattern "age INTEGER,")
+
+    describe "INSERT SQL" do
+      it "generates INSERT skipping PrimaryKey columns" do
+        insertSQL `shouldSatisfy` contains (Pattern "INSERT INTO users")
+        insertSQL `shouldSatisfy` contains (Pattern "(age, email, name)")
+        insertSQL `shouldSatisfy` contains (Pattern "VALUES ($1, $2, $3)")
+        insertSQL `shouldSatisfy` contains (Pattern "RETURNING *")
