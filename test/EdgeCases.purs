@@ -62,16 +62,30 @@ groupByMissingColumn = from usersTable
   # groupBy @"name"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- EDGE CASE 4: OVER clause content is not validated
--- Invalid SQL inside OVER() parens is silently accepted.
+-- EDGE CASE 4: OVER clause content validated (FIXED)
+-- Invalid OVER content now fails to compile
+-- (see OverClauseInvalidContent.purs, OverClauseNonexistentColumn.purs)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- OVER clause content is completely skipped by ExtractUntilParen
--- "INVALID SQL HERE" is not validated at all
-overClauseNotValidated
+overClauseValid
   :: Q _ (name :: String, rn :: Int) () _
-overClauseNotValidated = from usersTable
-  # select @"name, ROW_NUMBER() OVER (THIS IS TOTALLY INVALID) AS rn"
+overClauseValid = from usersTable
+  # select @"name, ROW_NUMBER() OVER (ORDER BY age) AS rn"
+
+overClausePartitionBy
+  :: Q _ (name :: String, rnk :: Int) () _
+overClausePartitionBy = from usersTable
+  # select @"name, RANK() OVER (PARTITION BY name ORDER BY age DESC) AS rnk"
+
+overClausePartitionByOnly
+  :: Q _ (name :: String, rn :: Int) () _
+overClausePartitionByOnly = from usersTable
+  # select @"name, ROW_NUMBER() OVER (PARTITION BY name) AS rn"
+
+overClauseEmpty
+  :: Q _ (name :: String, rn :: Int) () _
+overClauseEmpty = from usersTable
+  # select @"name, ROW_NUMBER() OVER () AS rn"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 5: WHERE keywords are case-sensitive (uppercase only)
@@ -111,14 +125,9 @@ distinctOrderByNonSelected = from usersTable
   # orderBy @"age"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- EDGE CASE 7: Aggregate function on nonexistent column in OVER
--- OVER content is skipped so "ORDER BY nonexistent" compiles
+-- EDGE CASE 7: Nonexistent column in OVER (FIXED)
+-- OVER content is now validated (see OverClauseNonexistentColumn.purs)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-overNonexistentColumn
-  :: Q _ (name :: String, rn :: Int) () _
-overNonexistentColumn = from usersTable
-  # select @"name, ROW_NUMBER() OVER (ORDER BY nonexistent_column) AS rn"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- EDGE CASE 8: Nested parens in aggregate args (FIXED)

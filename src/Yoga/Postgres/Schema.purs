@@ -982,9 +982,10 @@ else instance
 class ParseOverClauseByHead :: Symbol -> Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
 class ParseOverClauseByHead head tail tables returnType accRL outRL | head tail tables returnType accRL -> outRL
 
--- Open paren: extract until close paren, skip content, continue to AS
+-- Open paren: extract until close paren, validate content, continue to AS
 instance
-  ( ExtractUntilParen tail _overContent afterParen
+  ( ExtractUntilParen tail overContent afterParen
+  , ValidateOverContent overContent tables
   , SkipSpaces afterParen rest
   , ParseAfterAggregate rest tables returnType accRL outRL
   ) =>
@@ -993,6 +994,153 @@ instance
 else instance
   Fail (Text "Expected ( after OVER") =>
   ParseOverClauseByHead h t tables returnType accRL outRL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- ValidateOverContent: validates PARTITION BY / ORDER BY inside OVER(...)
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class ValidateOverContent :: Symbol -> Row (Row Type) -> Constraint
+class ValidateOverContent content tables
+
+instance ValidateOverContent "" tables
+
+else instance
+  ( SkipSpaces content content'
+  , ValidateOverContentTrimmed content' tables
+  ) =>
+  ValidateOverContent content tables
+
+class ValidateOverContentTrimmed :: Symbol -> Row (Row Type) -> Constraint
+class ValidateOverContentTrimmed content tables
+
+instance ValidateOverContentTrimmed "" tables
+
+else instance
+  ( ExtractWord content keyword rest
+  , ValidateOverKeyword keyword rest tables
+  ) =>
+  ValidateOverContentTrimmed content tables
+
+class ValidateOverKeyword :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidateOverKeyword keyword rest tables
+
+instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidatePartitionByColumns afterBy tables
+  ) =>
+  ValidateOverKeyword "PARTITION" rest tables
+
+else instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidatePartitionByColumns afterBy tables
+  ) =>
+  ValidateOverKeyword "partition" rest tables
+
+else instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidateOrderBy afterBy tables
+  ) =>
+  ValidateOverKeyword "ORDER" rest tables
+
+else instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidateOrderBy afterBy tables
+  ) =>
+  ValidateOverKeyword "order" rest tables
+
+else instance
+  Fail (Text "Expected PARTITION BY or ORDER BY inside OVER clause") =>
+  ValidateOverKeyword keyword rest tables
+
+class AssertIsBy :: Symbol -> Constraint
+class AssertIsBy sym
+
+instance AssertIsBy "BY"
+else instance AssertIsBy "by"
+else instance Fail (Text "Expected BY after PARTITION or ORDER") => AssertIsBy sym
+
+-- ValidatePartitionByColumns: column list that terminates at ORDER keyword
+class ValidatePartitionByColumns :: Symbol -> Row (Row Type) -> Constraint
+class ValidatePartitionByColumns sym tables
+
+instance ValidatePartitionByColumns "" tables
+
+else instance
+  ( SkipSpaces sym sym'
+  , ValidatePartitionByColumnsTrimmed sym' tables
+  ) =>
+  ValidatePartitionByColumns sym tables
+
+class ValidatePartitionByColumnsTrimmed :: Symbol -> Row (Row Type) -> Constraint
+class ValidatePartitionByColumnsTrimmed sym tables
+
+instance ValidatePartitionByColumnsTrimmed "" tables
+
+else instance
+  ( Symbol.Cons h t sym
+  , ValidatePartitionByColumnsGo h t "" tables
+  ) =>
+  ValidatePartitionByColumnsTrimmed sym tables
+
+class ValidatePartitionByColumnsGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
+class ValidatePartitionByColumnsGo head tail acc tables
+
+-- Comma: flush column, continue
+instance
+  ( ResolveColumn acc tables typ
+  , SkipSpaces tail rest
+  , ValidatePartitionByColumnsTrimmed rest tables
+  ) =>
+  ValidatePartitionByColumnsGo "," tail acc tables
+
+-- Space: flush word, check if ORDER keyword or column
+else instance
+  ( SkipSpaces tail rest
+  , FlushPartitionWord acc rest tables
+  ) =>
+  ValidatePartitionByColumnsGo " " tail acc tables
+
+-- End of string: flush final column
+else instance
+  ( Symbol.Append acc h acc'
+  , ResolveColumn acc' tables typ
+  ) =>
+  ValidatePartitionByColumnsGo h "" acc tables
+
+-- Regular char: accumulate
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidatePartitionByColumnsGo nextH nextT acc' tables
+  ) =>
+  ValidatePartitionByColumnsGo h tail acc tables
+
+class FlushPartitionWord :: Symbol -> Symbol -> Row (Row Type) -> Constraint
+class FlushPartitionWord word rest tables
+
+instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidateOrderBy afterBy tables
+  ) =>
+  FlushPartitionWord "ORDER" rest tables
+
+else instance
+  ( ExtractWord rest byWord afterBy
+  , AssertIsBy byWord
+  , ValidateOrderBy afterBy tables
+  ) =>
+  FlushPartitionWord "order" rest tables
+
+else instance
+  ( ResolveColumn word tables typ
+  , ValidatePartitionByColumnsTrimmed rest tables
+  ) =>
+  FlushPartitionWord word rest tables
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ParseWhere: parse "id = $id AND age > $age" -> params
