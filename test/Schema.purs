@@ -466,6 +466,32 @@ typedFullAggregate = from usersTable
   # limit 10
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Table aliases
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedFromAs
+  :: Q _ (name :: String) () _
+typedFromAs = fromAs @"u" usersTable # select @"u.name"
+
+typedSelfJoin
+  :: Q _ (name :: String, manager_name :: String) () _
+typedSelfJoin = from usersTable
+  # innerJoinAs @"managers" @"users.id = managers.id" usersTable
+  # select @"users.name, managers.name AS manager_name"
+
+typedBothAliased
+  :: Q _ (name :: String, other_name :: String) () _
+typedBothAliased = fromAs @"u1" usersTable
+  # innerJoinAs @"u2" @"u1.id = u2.id" usersTable
+  # select @"u1.name, u2.name AS other_name"
+
+typedLeftJoinAs
+  :: Q _ (name :: String, other_email :: Maybe String) () _
+typedLeftJoinAs = from usersTable
+  # leftJoinAs @"u2" @"users.id = u2.id" usersTable
+  # select @"users.name, u2.email AS other_email"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -557,6 +583,16 @@ spec = do
         (typedJoinLimitOffset # toSQL) `shouldEqual` "SELECT users.name, posts.title FROM users INNER JOIN posts ON users.id = posts.user_id ORDER BY users.name LIMIT 10 OFFSET 5"
       it "builds multi-way JOIN" do
         (typedMultiJoin # toSQL) `shouldEqual` "SELECT users.name, posts.title, comments.text FROM users INNER JOIN posts ON users.id = posts.user_id INNER JOIN comments ON posts.id = comments.post_id"
+
+    describe "Builder table aliases" do
+      it "builds FROM with alias" do
+        (typedFromAs # toSQL) `shouldEqual` "SELECT u.name FROM users u"
+      it "builds self-join with innerJoinAs" do
+        (typedSelfJoin # toSQL) `shouldEqual` "SELECT users.name, managers.name AS manager_name FROM users INNER JOIN users managers ON users.id = managers.id"
+      it "builds both sides aliased" do
+        (typedBothAliased # toSQL) `shouldEqual` "SELECT u1.name, u2.name AS other_name FROM users u1 INNER JOIN users u2 ON u1.id = u2.id"
+      it "builds LEFT JOIN with alias" do
+        (typedLeftJoinAs # toSQL) `shouldEqual` "SELECT users.name, u2.email AS other_email FROM users LEFT JOIN users u2 ON users.id = u2.id"
 
     describe "Builder DISTINCT" do
       it "builds SELECT DISTINCT" do

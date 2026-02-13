@@ -1612,6 +1612,9 @@ toSQL (Q q) = q.sql
 from :: forall name cols tables. IsSymbol name => Row.Cons name cols () tables => Proxy (Table name cols) -> Q tables () () ()
 from _ = Q { sql: reflectSymbol (Proxy :: Proxy name), values: [] }
 
+fromAs :: forall @alias name cols tables. IsSymbol name => IsSymbol alias => Row.Cons alias cols () tables => Proxy (Table name cols) -> Q tables () () ()
+fromAs _ = Q { sql: reflectSymbol (Proxy :: Proxy name) <> " " <> reflectSymbol (Proxy :: Proxy alias), values: [] }
+
 selectAll
   :: forall tables name cols result r p stage stage'
    . SingleTable tables name cols
@@ -1988,6 +1991,61 @@ leftJoin _ (Q q) = Q
   { sql: q.sql
       <> " LEFT JOIN "
       <> reflectSymbol (Proxy :: Proxy name)
+      <> " ON "
+      <> reflectSymbol (Proxy :: Proxy cond)
+  , values: q.values
+  }
+
+innerJoinAs
+  :: forall @alias @cond name cols tables tables' r p stage
+   . IsSymbol name
+  => IsSymbol alias
+  => IsSymbol cond
+  => Row.Lacks alias tables
+  => Row.Cons alias cols tables tables'
+  => ValidateJoinCondition cond tables'
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Proxy (Table name cols)
+  -> Q tables r p stage
+  -> Q tables' () () (join :: Unit)
+innerJoinAs _ (Q q) = Q
+  { sql: q.sql
+      <> " INNER JOIN "
+      <> reflectSymbol (Proxy :: Proxy name)
+      <> " "
+      <> reflectSymbol (Proxy :: Proxy alias)
+      <> " ON "
+      <> reflectSymbol (Proxy :: Proxy cond)
+  , values: q.values
+  }
+
+leftJoinAs
+  :: forall @alias @cond name cols colsRL nullableColsRL nullableCols tables tables' r p stage
+   . IsSymbol name
+  => IsSymbol alias
+  => IsSymbol cond
+  => RowToList cols colsRL
+  => MakeNullableRL colsRL nullableColsRL
+  => ListToRow nullableColsRL nullableCols
+  => Row.Lacks alias tables
+  => Row.Cons alias nullableCols tables tables'
+  => ValidateJoinCondition cond tables'
+  => Row.Lacks "select" stage
+  => Row.Lacks "insert" stage
+  => Row.Lacks "set" stage
+  => Row.Lacks "delete" stage
+  => Proxy (Table name cols)
+  -> Q tables r p stage
+  -> Q tables' () () (join :: Unit)
+leftJoinAs _ (Q q) = Q
+  { sql: q.sql
+      <> " LEFT JOIN "
+      <> reflectSymbol (Proxy :: Proxy name)
+      <> " "
+      <> reflectSymbol (Proxy :: Proxy alias)
       <> " ON "
       <> reflectSymbol (Proxy :: Proxy cond)
   , values: q.values
