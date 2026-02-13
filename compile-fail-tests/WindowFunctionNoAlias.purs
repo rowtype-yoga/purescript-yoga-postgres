@@ -1,8 +1,8 @@
--- EXPECT: Union
-module Test.CompileFail.InsertMissingRequired where
+-- EXPECT: Aggregate function requires AS alias
+module Test.CompileFail.WindowFunctionNoAlias where
 
 import Prelude
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Tuple.Nested (type (/\))
 import Type.Proxy (Proxy(..))
 import Yoga.Postgres.Schema
@@ -17,4 +17,4 @@ type UsersTable = Table "users"
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # insert { name: "A" }
+bad = from usersTable # select @"ROW_NUMBER() OVER (ORDER BY age)"
