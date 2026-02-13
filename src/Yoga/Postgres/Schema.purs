@@ -143,15 +143,17 @@ instance PGTypeName a => PGTypeName (Maybe a) where
 -- Constraint -> DDL fragment
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-class RenderDefault val where
-  renderDefault :: Proxy val -> String
+class RenderDefaultValue val typ where
+  renderDefaultValue :: Proxy val -> Proxy typ -> String
 
-instance Reflectable sym String => RenderDefault sym where
-  renderDefault _ = "DEFAULT '" <> reflectType (Proxy :: Proxy sym) <> "'"
-else instance Reflectable val Int => RenderDefault val where
-  renderDefault _ = "DEFAULT " <> show (reflectType (Proxy :: Proxy val))
-else instance Reflectable val Boolean => RenderDefault val where
-  renderDefault _ = if reflectType (Proxy :: Proxy val) then "DEFAULT true" else "DEFAULT false"
+instance Reflectable sym String => RenderDefaultValue sym String where
+  renderDefaultValue _ _ = "DEFAULT '" <> reflectType (Proxy :: Proxy sym) <> "'"
+
+instance Reflectable val Int => RenderDefaultValue val Int where
+  renderDefaultValue _ _ = "DEFAULT " <> show (reflectType (Proxy :: Proxy val))
+
+instance Reflectable val Boolean => RenderDefaultValue val Boolean where
+  renderDefaultValue _ _ = if reflectType (Proxy :: Proxy val) then "DEFAULT true" else "DEFAULT false"
 
 class RenderConstraint a where
   renderConstraint :: Proxy a -> String
@@ -165,8 +167,8 @@ else instance RenderConstraint a => RenderConstraint (AutoIncrement a) where
 else instance RenderConstraint a => RenderConstraint (Unique a) where
   renderConstraint _ = joinConstraints "UNIQUE" (renderConstraint (Proxy :: Proxy a))
 
-else instance (RenderDefault val, RenderConstraint a) => RenderConstraint (Default val a) where
-  renderConstraint _ = joinConstraints (renderDefault (Proxy :: Proxy val)) (renderConstraint (Proxy :: Proxy a))
+else instance (RenderDefaultValue val a, RenderConstraint a) => RenderConstraint (Default val a) where
+  renderConstraint _ = joinConstraints (renderDefaultValue (Proxy :: Proxy val) (Proxy :: Proxy a)) (renderConstraint (Proxy :: Proxy a))
 
 else instance (IsSymbol table, IsSymbol col, RenderConstraint a) => RenderConstraint (ForeignKey table References col a) where
   renderConstraint _ = joinConstraints
