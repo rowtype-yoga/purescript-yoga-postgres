@@ -531,6 +531,84 @@ typedNtile = from usersTable
   # select @"name, NTILE(4) OVER (ORDER BY age) AS bucket"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Parameterized LIMIT / OFFSET
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedLimitParam
+  :: Q _ (name :: String) (n :: Int) _
+typedLimitParam = from usersTable # select @"name" # limitParam @"n"
+
+typedOffsetParam
+  :: Q _ (name :: String) (n :: Int) _
+typedOffsetParam = from usersTable # select @"name" # offsetParam @"n"
+
+typedLimitParamWithWhere
+  :: Q _ (name :: String) (age :: Int, n :: Int) _
+typedLimitParamWithWhere = from usersTable
+  # select @"name"
+  # where_ @"age > $age"
+  # limitParam @"n"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- UNION / INTERSECT / EXCEPT
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedUnion
+  :: Q _ (name :: String) () _
+typedUnion = (from usersTable # select @"name")
+  `union` (from usersTable # select @"name")
+
+typedUnionAll
+  :: Q _ (name :: String) () _
+typedUnionAll = (from usersTable # select @"name")
+  `unionAll` (from usersTable # select @"name")
+
+typedUnionWithParams
+  :: Q _ (name :: String) (a :: Int, b :: Int) _
+typedUnionWithParams =
+  (from usersTable # select @"name" # where_ @"age > $a")
+    `union` (from usersTable # select @"name" # where_ @"age < $b")
+
+typedUnionOrderByLimit
+  :: Q _ (name :: String) () _
+typedUnionOrderByLimit =
+  (from usersTable # select @"name")
+    `union` (from usersTable # select @"name")
+    # orderBy @"name"
+    # limit 10
+
+typedIntersect
+  :: Q _ (name :: String) () _
+typedIntersect = (from usersTable # select @"name")
+  `intersect` (from usersTable # select @"name")
+
+typedExcept
+  :: Q _ (name :: String) () _
+typedExcept = (from usersTable # select @"name")
+  `except_` (from usersTable # select @"name")
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- WHERE features
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+typedBetween
+  :: Q _ _ (lo :: Int, hi :: Int) _
+typedBetween = from usersTable # selectAll # where_ @"age BETWEEN $lo AND $hi"
+
+typedIsNull
+  :: Q _ _ () _
+typedIsNull = from usersTable # selectAll # where_ @"age IS NULL"
+
+typedIsNotNull
+  :: Q _ _ () _
+typedIsNotNull = from usersTable # selectAll # where_ @"age IS NOT NULL"
+
+typedNestedParens
+  :: Q _ _ (a :: Int, b :: Int, name :: String) _
+typedNestedParens = from usersTable # selectAll
+  # where_ @"(age > $a OR age < $b) AND name = $name"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -670,6 +748,38 @@ spec = do
         (typedFirstValue # toSQL) `shouldEqual` "SELECT name, FIRST_VALUE(name) OVER (ORDER BY age) AS first_name FROM users"
       it "builds NTILE(n) OVER" do
         (typedNtile # toSQL) `shouldEqual` "SELECT name, NTILE(4) OVER (ORDER BY age) AS bucket FROM users"
+
+    describe "Builder parameterized LIMIT/OFFSET" do
+      it "builds LIMIT with param" do
+        (typedLimitParam # toSQL) `shouldEqual` "SELECT name FROM users LIMIT $n"
+      it "builds OFFSET with param" do
+        (typedOffsetParam # toSQL) `shouldEqual` "SELECT name FROM users OFFSET $n"
+      it "combines WHERE params with LIMIT param" do
+        (typedLimitParamWithWhere # toSQL) `shouldEqual` "SELECT name FROM users WHERE age > $age LIMIT $n"
+
+    describe "Builder UNION / INTERSECT / EXCEPT" do
+      it "builds UNION" do
+        (typedUnion # toSQL) `shouldEqual` "(SELECT name FROM users) UNION (SELECT name FROM users)"
+      it "builds UNION ALL" do
+        (typedUnionAll # toSQL) `shouldEqual` "(SELECT name FROM users) UNION ALL (SELECT name FROM users)"
+      it "builds UNION with params from both sides" do
+        (typedUnionWithParams # toSQL) `shouldEqual` "(SELECT name FROM users WHERE age > $a) UNION (SELECT name FROM users WHERE age < $b)"
+      it "builds UNION with ORDER BY and LIMIT" do
+        (typedUnionOrderByLimit # toSQL) `shouldEqual` "(SELECT name FROM users) UNION (SELECT name FROM users) ORDER BY name LIMIT 10"
+      it "builds INTERSECT" do
+        (typedIntersect # toSQL) `shouldEqual` "(SELECT name FROM users) INTERSECT (SELECT name FROM users)"
+      it "builds EXCEPT" do
+        (typedExcept # toSQL) `shouldEqual` "(SELECT name FROM users) EXCEPT (SELECT name FROM users)"
+
+    describe "Builder WHERE features" do
+      it "builds BETWEEN" do
+        (typedBetween # toSQL) `shouldEqual` "SELECT * FROM users WHERE age BETWEEN $lo AND $hi"
+      it "builds IS NULL" do
+        (typedIsNull # toSQL) `shouldEqual` "SELECT * FROM users WHERE age IS NULL"
+      it "builds IS NOT NULL" do
+        (typedIsNotNull # toSQL) `shouldEqual` "SELECT * FROM users WHERE age IS NOT NULL"
+      it "builds nested parentheses" do
+        (typedNestedParens # toSQL) `shouldEqual` "SELECT * FROM users WHERE (age > $a OR age < $b) AND name = $name"
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
@@ -941,3 +1051,112 @@ integrationSpec conn = do
       case result of
         Just r -> r.title `shouldEqual` "Alice's Post"
         Nothing -> shouldEqual "found" "nothing"
+
+  describe "Parameterized LIMIT/OFFSET execution" do
+    it "parameterized LIMIT restricts rows" do
+      rows <- from usersTable # select @"name" # orderBy @"name"
+        # limitParam @"n"
+        # runQuery conn { n: 1 }
+      Array.length rows `shouldEqual` 1
+
+    it "parameterized OFFSET skips rows" do
+      rows <- from usersTable # select @"name" # orderBy @"name"
+        # limitParam @"n"
+        # offsetParam @"off"
+        # runQuery conn { n: 1, off: 1 }
+      Array.length rows `shouldEqual` 1
+
+    it "parameterized LIMIT with WHERE" do
+      rows <- from usersTable # select @"name"
+        # where_ @"age > $age"
+        # orderBy @"name"
+        # limitParam @"n"
+        # runQuery conn { age: 0, n: 1 }
+      Array.length rows `shouldEqual` 1
+
+  describe "UNION / INTERSECT / EXCEPT execution" do
+    it "UNION deduplicates" do
+      rows <-
+        (from usersTable # select @"name")
+          `union` (from usersTable # select @"name")
+          # runQuery conn {}
+      Array.length rows `shouldEqual` 2
+
+    it "UNION ALL keeps duplicates" do
+      rows <-
+        (from usersTable # select @"name")
+          `unionAll` (from usersTable # select @"name")
+          # runQuery conn {}
+      Array.length rows `shouldEqual` 4
+
+    it "UNION with params from both sides" do
+      rows <-
+        (from usersTable # select @"name" # where_ @"age > $a")
+          `union` (from usersTable # select @"name" # where_ @"age < $b")
+          # runQuery conn { a: 100, b: 0 }
+      Array.length rows `shouldEqual` 0
+
+    it "INTERSECT returns common rows" do
+      rows <-
+        (from usersTable # select @"name")
+          `intersect` (from usersTable # select @"name")
+          # runQuery conn {}
+      Array.length rows `shouldEqual` 2
+
+    it "EXCEPT removes matching rows" do
+      rows <-
+        (from usersTable # select @"name")
+          `except_` (from usersTable # select @"name" # where_ @"name = $name")
+          # runQuery conn { name: "Alice" }
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Bob" ]
+
+    it "UNION with ORDER BY and LIMIT" do
+      rows <-
+        (from usersTable # select @"name")
+          `union` (from usersTable # select @"name")
+          # orderBy @"name"
+          # limit 1
+          # runQuery conn {}
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Alice" ]
+
+  describe "WHERE features execution" do
+    it "BETWEEN filters range" do
+      rows <- from usersTable # select @"name"
+        # where_ @"age BETWEEN $lo AND $hi"
+        # runQuery conn { lo: 20, hi: 26 }
+      Array.length rows `shouldEqual` 1
+      (map _.name rows) `shouldEqual` [ "Alice" ]
+
+    it "IS NULL matches null values" do
+      _ <- from usersTable
+        # insert { name: "NullAge", email: "nullage@example.com" }
+        # runExecute conn {}
+      rows <- from usersTable # select @"name"
+        # where_ @"age IS NULL"
+        # runQuery conn {}
+      (map _.name rows) `shouldSatisfy` Array.elem "NullAge"
+      _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
+        [ PG.toPGValue "NullAge" ]
+        conn
+      pure unit
+
+    it "IS NOT NULL excludes null values" do
+      _ <- from usersTable
+        # insert { name: "NullAge2", email: "nullage2@example.com" }
+        # runExecute conn {}
+      rows <- from usersTable # select @"name"
+        # where_ @"age IS NOT NULL"
+        # runQuery conn {}
+      (map _.name rows) `shouldSatisfy` (not <<< Array.elem "NullAge2")
+      _ <- PG.execute (PG.SQL "DELETE FROM users WHERE name = $1")
+        [ PG.toPGValue "NullAge2" ]
+        conn
+      pure unit
+
+    it "nested parentheses" do
+      rows <- from usersTable # select @"name"
+        # where_ @"(age > $a OR age < $b) AND name = $name"
+        # runQuery conn { a: 100, b: 0, name: "Alice" }
+      Array.length rows `shouldEqual` 0

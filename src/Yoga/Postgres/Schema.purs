@@ -1838,6 +1838,18 @@ limit
   -> Q tables result params stage'
 limit n (Q q) = Q (q { sql = q.sql <> " LIMIT " <> show n })
 
+limitParam
+  :: forall @name tables result params params' stage stage'
+   . IsSymbol name
+  => Row.Lacks name params
+  => Row.Cons name Int params params'
+  => HasClause "select" stage
+  => Row.Lacks "limit" stage
+  => Row.Cons "limit" Unit stage stage'
+  => Q tables result params stage
+  -> Q tables result params' stage'
+limitParam (Q q) = Q (q { sql = q.sql <> " LIMIT $" <> reflectSymbol (Proxy :: Proxy name) })
+
 offset
   :: forall tables result params stage stage'
    . HasClause "select" stage
@@ -1847,6 +1859,18 @@ offset
   -> Q tables result params stage
   -> Q tables result params stage'
 offset n (Q q) = Q (q { sql = q.sql <> " OFFSET " <> show n })
+
+offsetParam
+  :: forall @name tables result params params' stage stage'
+   . IsSymbol name
+  => Row.Lacks name params
+  => Row.Cons name Int params params'
+  => HasClause "select" stage
+  => Row.Lacks "offset" stage
+  => Row.Cons "offset" Unit stage stage'
+  => Q tables result params stage
+  -> Q tables result params' stage'
+offsetParam (Q q) = Q (q { sql = q.sql <> " OFFSET $" <> reflectSymbol (Proxy :: Proxy name) })
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- INSERT builder
@@ -2134,6 +2158,86 @@ leftJoinAs _ (Q q) = Q
       <> reflectSymbol (Proxy :: Proxy cond)
   , values: q.values
   }
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Set operations: UNION, INTERSECT, EXCEPT
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type SetOpStage =
+  ( select :: Unit
+  , "where" :: Unit
+  , groupBy :: Unit
+  , having :: Unit
+  , insert :: Unit
+  , "set" :: Unit
+  , "delete" :: Unit
+  )
+
+union
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+union (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") UNION (" <> q2.sql <> ")", values: q1.values <> q2.values }
+
+unionAll
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+unionAll (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") UNION ALL (" <> q2.sql <> ")", values: q1.values <> q2.values }
+
+intersect
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+intersect (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") INTERSECT (" <> q2.sql <> ")", values: q1.values <> q2.values }
+
+intersectAll
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+intersectAll (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") INTERSECT ALL (" <> q2.sql <> ")", values: q1.values <> q2.values }
+
+except_
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+except_ (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") EXCEPT (" <> q2.sql <> ")", values: q1.values <> q2.values }
+
+exceptAll
+  :: forall tables1 tables2 result params1 params2 params stage1 stage2
+   . HasClause "select" stage1
+  => HasClause "select" stage2
+  => Row.Union params1 params2 params
+  => Row.Nub params params
+  => Q tables1 result params1 stage1
+  -> Q tables2 result params2 stage2
+  -> Q tables1 result params SetOpStage
+exceptAll (Q q1) (Q q2) = Q { sql: "(" <> q1.sql <> ") EXCEPT ALL (" <> q2.sql <> ")", values: q1.values <> q2.values }
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Query execution
