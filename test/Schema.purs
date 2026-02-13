@@ -5,6 +5,7 @@ import Prelude
 import Data.Maybe (Maybe)
 import Data.String (contains, Pattern(..))
 import Data.Tuple.Nested (type (/\))
+import Prim.Boolean (True)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Yoga.Postgres.Schema
@@ -54,9 +55,9 @@ selectWhereSQL = selectWhereSQLFor @UsersTable @(id :: Int)
 
 type ConfigTable = Table "config"
   ( id :: Column Int (PrimaryKey /\ AutoIncrement)
-  , active :: Column Boolean (Default "true")
+  , active :: Column Boolean (DefaultBool True)
   , role :: Column String (Default "'user'")
-  , score :: Column Int (Default "0")
+  , score :: Column Int (DefaultInt 0)
   )
 
 configDDL :: String
