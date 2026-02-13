@@ -95,10 +95,10 @@ builderSelectCols :: String
 builderSelectCols = from usersTable # select @"name, email" # toSQL
 
 builderSelectWhere :: String
-builderSelectWhere = from usersTable # selectAll # where_ @"id" # toSQL
+builderSelectWhere = from usersTable # selectAll # where_ @"id = $1" # toSQL
 
 builderSelectColsWhere :: String
-builderSelectColsWhere = from usersTable # select @"name" # where_ @"age" # toSQL
+builderSelectColsWhere = from usersTable # select @"name" # where_ @"age > $1" # toSQL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
@@ -152,4 +152,4 @@ spec = do
       it "builds SELECT * with WHERE" do
         builderSelectWhere `shouldEqual` "SELECT * FROM users WHERE id = $1"
       it "builds SELECT columns with WHERE" do
-        builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age = $1"
+        builderSelectColsWhere `shouldEqual` "SELECT name FROM users WHERE age > $1"

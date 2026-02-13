@@ -2,8 +2,7 @@ module Yoga.Postgres.Schema where
 
 import Prelude
 
-import Data.Array (intercalate, mapWithIndex, filter)
-import Data.String as String
+import Data.Array (intercalate, mapWithIndex)
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol, reflectSymbol)
@@ -318,48 +317,157 @@ instance
 -- Builder-style query API
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- Type-level column name validation
--- Validates that every comma-separated name in a Symbol exists in the table's row
+-- Type-level WHERE clause validation
+-- Parses SQL-like syntax, extracts identifiers, validates them as column names
+--
+-- Recognises:
+--   column names  → validated against the table row
+--   $N            → parameter placeholders, skipped
+--   AND OR NOT IS NULL LIKE IN TRUE FALSE → SQL keywords, skipped
+--   = > < >= <= != <> → operators, skipped
+--   ( ) , digits  → punctuation, skipped
 
+-- Top-level: walk the Symbol, extract words, validate column-like words
+class ValidateWhere :: Symbol -> Row Type -> Constraint
+class ValidateWhere sym cols
+
+instance ValidateWhere "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateWhereGo h t "" cols
+  ) =>
+  ValidateWhere sym cols
+
+-- Walk character by character, accumulating words
+class ValidateWhereGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
+class ValidateWhereGo head tail acc cols
+
+-- Space: flush accumulated word, continue
+instance
+  ( FlushWord acc cols
+  , SkipSpaces tail rest
+  , ValidateWhere rest cols
+  ) =>
+  ValidateWhereGo " " tail acc cols
+
+-- Operators and punctuation: flush word, skip char, continue
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "=" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ">" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "<" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "!" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "(" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo ")" tail acc cols
+else instance (FlushWord acc cols, ValidateWhere tail cols) => ValidateWhereGo "," tail acc cols
+
+-- End of string: flush final word
+else instance
+  ( Symbol.Append acc h acc'
+  , FlushWord acc' cols
+  ) =>
+  ValidateWhereGo h "" acc cols
+
+-- Regular character: accumulate and continue
+else instance
+  ( Symbol.Append acc h acc'
+  , Symbol.Cons nextH nextT tail
+  , ValidateWhereGo nextH nextT acc' cols
+  ) =>
+  ValidateWhereGo h tail acc cols
+
+-- Flush a word: if it looks like a column name, validate it; otherwise skip
+class FlushWord :: Symbol -> Row Type -> Constraint
+class FlushWord word cols
+
+-- Empty accumulator: nothing to validate
+instance FlushWord "" cols
+
+-- $-prefixed: parameter placeholder, skip
+else instance FlushWord "$" cols
+
+-- SQL keywords: skip
+else instance FlushWord "AND" cols
+else instance FlushWord "OR" cols
+else instance FlushWord "NOT" cols
+else instance FlushWord "IS" cols
+else instance FlushWord "NULL" cols
+else instance FlushWord "LIKE" cols
+else instance FlushWord "ILIKE" cols
+else instance FlushWord "IN" cols
+else instance FlushWord "TRUE" cols
+else instance FlushWord "FALSE" cols
+else instance FlushWord "BETWEEN" cols
+else instance FlushWord "ANY" cols
+else instance FlushWord "ALL" cols
+
+-- Non-keyword: check first character to decide
+else instance
+  ( Symbol.Cons head rest word
+  , FlushWordByHead head word cols
+  ) =>
+  FlushWord word cols
+
+-- Branch on first character of the word
+class FlushWordByHead :: Symbol -> Symbol -> Row Type -> Constraint
+class FlushWordByHead head word cols
+
+-- $-prefixed: parameter placeholder, skip
+instance FlushWordByHead "$" word cols
+-- Digit-prefixed: number literal, skip
+else instance FlushWordByHead "0" word cols
+else instance FlushWordByHead "1" word cols
+else instance FlushWordByHead "2" word cols
+else instance FlushWordByHead "3" word cols
+else instance FlushWordByHead "4" word cols
+else instance FlushWordByHead "5" word cols
+else instance FlushWordByHead "6" word cols
+else instance FlushWordByHead "7" word cols
+else instance FlushWordByHead "8" word cols
+else instance FlushWordByHead "9" word cols
+
+-- Anything else: must be a column name
+else instance Row.Cons word typ rest cols => FlushWordByHead head word cols
+
+else instance
+  Fail (Beside (Beside (Text "Column ") (Quote word)) (Text " does not exist in the table")) =>
+  FlushWordByHead head word cols
+
+-- Also validate comma-separated column lists (for select)
 class ValidateColumns :: Symbol -> Row Type -> Constraint
 class ValidateColumns sym cols
+
+instance ValidateColumns "" cols
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateColumnsGo h t "" cols
+  ) =>
+  ValidateColumns sym cols
 
 class ValidateColumnsGo :: Symbol -> Symbol -> Symbol -> Row Type -> Constraint
 class ValidateColumnsGo head tail acc cols
 
--- Empty string: nothing to validate
-instance ValidateColumns "" cols
-
--- Non-empty: start character-by-character walk
-else instance
-  ( Symbol.Cons head tail sym
-  , ValidateColumnsGo head tail "" cols
-  ) =>
-  ValidateColumns sym cols
-
--- Hit a comma: validate accumulated name, skip to next
+-- Comma: flush name, continue
 instance
-  ( ValidateColumn acc cols
+  ( FlushWord acc cols
   , SkipSpaces tail rest
   , ValidateColumns rest cols
   ) =>
   ValidateColumnsGo "," tail acc cols
 
--- Hit a space: validate accumulated name, skip spaces then expect comma or end
+-- Space: flush name, skip to comma or end
 else instance
   ( SkipSpaces tail rest
-  , ValidateAfterSpace acc rest cols
+  , ValidateAfterName acc rest cols
   ) =>
   ValidateColumnsGo " " tail acc cols
 
--- End of string (no more chars): validate final accumulated name
+-- End of string: flush final name
 else instance
   ( Symbol.Append acc h acc'
-  , ValidateColumn acc' cols
+  , FlushWord acc' cols
   ) =>
   ValidateColumnsGo h "" acc cols
 
--- Regular character: append to accumulator, continue
+-- Regular char: accumulate
 else instance
   ( Symbol.Append acc h acc'
   , Symbol.Cons nextH nextT tail
@@ -367,21 +475,17 @@ else instance
   ) =>
   ValidateColumnsGo h tail acc cols
 
--- After a space inside a name: either comma (end of name) or more text
-class ValidateAfterSpace :: Symbol -> Symbol -> Row Type -> Constraint
-class ValidateAfterSpace acc rest cols
+class ValidateAfterName :: Symbol -> Symbol -> Row Type -> Constraint
+class ValidateAfterName acc rest cols
 
--- Rest is empty: validate the accumulated name
-instance ValidateColumn acc cols => ValidateAfterSpace acc "" cols
-
--- Rest starts with comma: validate name, continue parsing
+instance FlushWord acc cols => ValidateAfterName acc "" cols
 else instance
-  ( ValidateColumn acc cols
+  ( FlushWord acc cols
   , Symbol.Cons "," tail rest
   , SkipSpaces tail rest'
   , ValidateColumns rest' cols
   ) =>
-  ValidateAfterSpace acc rest cols
+  ValidateAfterName acc rest cols
 
 -- Skip leading spaces
 class SkipSpaces :: Symbol -> Symbol -> Constraint
@@ -399,27 +503,6 @@ class SkipSpacesGo head tail result | head tail -> result
 
 instance SkipSpaces tail result => SkipSpacesGo " " tail result
 else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
-
--- Validate a single column name exists in the row
-class ValidateColumn :: Symbol -> Row Type -> Constraint
-class ValidateColumn name cols
-
-instance
-  ( Row.Cons name typ rest cols
-  ) =>
-  ValidateColumn name cols
-
-else instance
-  ( Fail (Beside (Beside (Text "Column ") (Quote name)) (Text " does not exist in the table"))
-  ) =>
-  ValidateColumn name cols
-
--- Reflect a comma-separated Symbol to Array String at value level
-splitColumns :: forall sym. IsSymbol sym => Proxy sym -> Array String
-splitColumns _ = reflectSymbol (Proxy :: Proxy sym)
-  # String.split (String.Pattern ",")
-  # map String.trim
-  # filter (_ /= "")
 
 -- Query builder
 
@@ -444,13 +527,10 @@ select _ = Q ("SELECT " <> reflectSymbol (Proxy :: Proxy sel) <> " FROM " <> ref
 where_
   :: forall @whr name cols
    . IsSymbol whr
-  => ValidateColumns whr cols
+  => ValidateWhere whr cols
   => Q name cols
   -> Q name cols
-where_ (Q base) = do
-  let cols = splitColumns (Proxy :: Proxy whr)
-  let conditions = cols # mapWithIndex \i col -> col <> " = $" <> show (i + 1)
-  Q (base <> " WHERE " <> intercalate " AND " conditions)
+where_ (Q base) = Q (base <> " WHERE " <> reflectSymbol (Proxy :: Proxy whr))
 
 toSQL :: forall name cols. Q name cols -> String
 toSQL (Q s) = s
