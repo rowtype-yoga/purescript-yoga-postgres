@@ -197,3 +197,42 @@ instance
       <> intercalate ", " placeholders
       <> ")"
       <> " RETURNING *"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- SELECT SQL generation
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class SelectAllSQLFor a where
+  selectAllSQLFor :: String
+
+instance
+  ( IsSymbol name
+  ) =>
+  SelectAllSQLFor (Table name cols) where
+  selectAllSQLFor = "SELECT * FROM " <> reflectSymbol (Proxy :: Proxy name)
+
+class WhereClauseRL :: RL.RowList Type -> Constraint
+class WhereClauseRL rl where
+  whereClauseRL :: Proxy rl -> Int -> Array String
+
+instance WhereClauseRL RL.Nil where
+  whereClauseRL _ _ = []
+
+instance (IsSymbol name, WhereClauseRL tail) => WhereClauseRL (RL.Cons name typ tail) where
+  whereClauseRL _ idx =
+    [ reflectSymbol (Proxy :: Proxy name) <> " = $" <> show idx ]
+      <> whereClauseRL (Proxy :: Proxy tail) (idx + 1)
+
+class SelectWhereSQLFor a whereRow where
+  selectWhereSQLFor :: String
+
+instance
+  ( IsSymbol name
+  , RowToList whereRow whereRL
+  , WhereClauseRL whereRL
+  ) =>
+  SelectWhereSQLFor (Table name cols) whereRow where
+  selectWhereSQLFor = do
+    let tableName = reflectSymbol (Proxy :: Proxy name)
+    let conditions = whereClauseRL (Proxy :: Proxy whereRL) 1
+    "SELECT * FROM " <> tableName <> " WHERE " <> intercalate " AND " conditions

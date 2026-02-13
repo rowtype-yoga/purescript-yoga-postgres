@@ -42,11 +42,11 @@ insertSQL = insertSQLFor @UsersTable
 -- Phase 4: Type-safe SELECT
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- allUsers :: PG.Connection -> Aff (Either String (Array { id :: Int, name :: String, email :: String, age :: Maybe Int }))
--- allUsers conn = selectAll @UsersTable conn
+selectAllSQL :: String
+selectAllSQL = selectAllSQLFor @UsersTable
 
--- userById :: PG.Connection -> Aff (Either String (Array { id :: Int, name :: String, email :: String, age :: Maybe Int }))
--- userById conn = selectWhere @UsersTable { id: 1 } conn
+selectWhereSQL :: String
+selectWhereSQL = selectWhereSQLFor @UsersTable @(id :: Int)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Phase 5: Type-level defaults
@@ -97,8 +97,14 @@ spec = do
         ddl `shouldSatisfy` contains (Pattern "age INTEGER,")
 
     describe "INSERT SQL" do
-      it "generates INSERT skipping PrimaryKey columns" do
+      it "generates INSERT skipping AutoIncrement columns" do
         insertSQL `shouldSatisfy` contains (Pattern "INSERT INTO users")
         insertSQL `shouldSatisfy` contains (Pattern "(age, email, name)")
         insertSQL `shouldSatisfy` contains (Pattern "VALUES ($1, $2, $3)")
         insertSQL `shouldSatisfy` contains (Pattern "RETURNING *")
+
+    describe "SELECT SQL" do
+      it "generates SELECT ALL" do
+        selectAllSQL `shouldEqual` "SELECT * FROM users"
+      it "generates SELECT WHERE" do
+        selectWhereSQL `shouldEqual` "SELECT * FROM users WHERE id = $1"
