@@ -63,9 +63,9 @@ selectWhereSQL = selectWhereSQLFor @UsersTable @(id :: Int)
 
 type ConfigTable = Table "config"
   ( id :: Int # PrimaryKey # AutoIncrement
-  , active :: Boolean # DefaultBool True
+  , active :: Boolean # Default True
   , role :: String # Default "user"
-  , score :: Int # DefaultInt 0
+  , score :: Int # Default 0
   )
 
 configDDL :: String
@@ -464,6 +464,14 @@ typedFullAggregate = from usersTable
   # orderBy @"name"
   # limit @"10"
 
+typedWhereGroupByHaving
+  :: Q _ (name :: String, cnt :: Int) (age :: Int, minCount :: Int) _
+typedWhereGroupByHaving = from usersTable
+  # select @"name, COUNT(*) AS cnt"
+  # where_ @"age > $age"
+  # groupBy @"name"
+  # having @"COUNT(*) > $minCount"
+
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Table aliases
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -731,6 +739,8 @@ spec = do
         (typedHaving # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $minCount"
       it "builds full aggregate chain" do
         (typedFullAggregate # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users GROUP BY name HAVING COUNT(*) > $min ORDER BY name LIMIT 10"
+      it "builds WHERE + GROUP BY + HAVING" do
+        (typedWhereGroupByHaving # toSQL) `shouldEqual` "SELECT name, COUNT(*) AS cnt FROM users WHERE age > $age GROUP BY name HAVING COUNT(*) > $minCount"
 
     describe "Builder window functions" do
       it "builds ROW_NUMBER() OVER" do
@@ -1170,3 +1180,14 @@ integrationSpec conn = do
         # where_ @"(age > $a OR age < $b) AND name = $name"
         # runQuery conn { a: 100, b: 0, name: "Alice" }
       rows `shouldEqual` ([] :: Array { name :: String })
+
+  describe "HAVING with WHERE params" do
+    it "WHERE + GROUP BY + HAVING merges params" do
+      resetUsers conn
+      rows <- from usersTable
+        # select @"name, COUNT(*) AS cnt"
+        # where_ @"age > $age"
+        # groupBy @"name"
+        # having @"COUNT(*) > $minCount"
+        # runQuery conn { age: 10, minCount: 0 }
+      rows `shouldEqual` [ { name: "Alice", cnt: 1 }, { name: "Bob", cnt: 1 } ]
