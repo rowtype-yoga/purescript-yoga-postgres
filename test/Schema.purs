@@ -9,7 +9,7 @@ import Data.Enum (toEnum)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Time (Time(..))
 import Partial.Unsafe (unsafePartial)
-import Data.String (contains, Pattern(..))
+
 import Data.Tuple.Nested (type (/\))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -414,26 +414,15 @@ spec = do
   describe "Schema" do
     describe "CREATE TABLE DDL" do
       it "generates correct DDL for UsersTable" do
-        ddl `shouldSatisfy` contains (Pattern "CREATE TABLE users")
-        ddl `shouldSatisfy` contains (Pattern "id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
-        ddl `shouldSatisfy` contains (Pattern "name TEXT NOT NULL")
-        ddl `shouldSatisfy` contains (Pattern "email TEXT NOT NULL UNIQUE")
-        ddl `shouldSatisfy` contains (Pattern "age INTEGER,")
+        ddl `shouldEqual` "CREATE TABLE users (age INTEGER, email TEXT NOT NULL UNIQUE, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, name TEXT NOT NULL)"
 
     describe "Extended types DDL" do
       it "generates DDL with JSONB, TIMESTAMPTZ, BIGINT, arrays" do
-        eventsDDL `shouldSatisfy` contains (Pattern "CREATE TABLE events")
-        eventsDDL `shouldSatisfy` contains (Pattern "metadata JSONB NOT NULL")
-        eventsDDL `shouldSatisfy` contains (Pattern "tags TEXT[] NOT NULL")
-        eventsDDL `shouldSatisfy` contains (Pattern "created_at TIMESTAMPTZ NOT NULL")
-        eventsDDL `shouldSatisfy` contains (Pattern "view_count BIGINT NOT NULL")
+        eventsDDL `shouldEqual` "CREATE TABLE events (created_at TIMESTAMPTZ NOT NULL, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, metadata JSONB NOT NULL, tags TEXT[] NOT NULL, title TEXT NOT NULL, view_count BIGINT NOT NULL)"
 
     describe "INSERT SQL" do
       it "generates INSERT skipping AutoIncrement columns" do
-        insertSQL `shouldSatisfy` contains (Pattern "INSERT INTO users")
-        insertSQL `shouldSatisfy` contains (Pattern "(age, email, name)")
-        insertSQL `shouldSatisfy` contains (Pattern "VALUES ($1, $2, $3)")
-        insertSQL `shouldSatisfy` contains (Pattern "RETURNING *")
+        insertSQL `shouldEqual` "INSERT INTO users (age, email, name) VALUES ($1, $2, $3) RETURNING *"
 
     describe "SELECT SQL" do
       it "generates SELECT ALL" do
@@ -443,9 +432,7 @@ spec = do
 
     describe "Defaults" do
       it "renders DEFAULT in DDL" do
-        configDDL `shouldSatisfy` contains (Pattern "active BOOLEAN NOT NULL DEFAULT true")
-        configDDL `shouldSatisfy` contains (Pattern "role TEXT NOT NULL DEFAULT 'user'")
-        configDDL `shouldSatisfy` contains (Pattern "score INTEGER NOT NULL DEFAULT 0")
+        configDDL `shouldEqual` "CREATE TABLE config (active BOOLEAN NOT NULL DEFAULT true, id INTEGER NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY, role TEXT NOT NULL DEFAULT 'user', score INTEGER NOT NULL DEFAULT 0)"
       it "skips Default columns in INSERT" do
         configInsertSQL `shouldEqual` "INSERT INTO config () VALUES () RETURNING *"
 
@@ -473,12 +460,9 @@ spec = do
 
     describe "Builder INSERT" do
       it "builds INSERT" do
-        builderInsert `shouldSatisfy` contains (Pattern "INSERT INTO users")
-        builderInsert `shouldSatisfy` contains (Pattern "(age, email, name)")
-        builderInsert `shouldSatisfy` contains (Pattern "VALUES ($1, $2, $3)")
+        builderInsert `shouldEqual` "INSERT INTO users (age, email, name) VALUES ($1, $2, $3)"
       it "builds INSERT with RETURNING" do
-        builderInsertReturning `shouldSatisfy` contains (Pattern "INSERT INTO users")
-        builderInsertReturning `shouldSatisfy` contains (Pattern "RETURNING id, name")
+        builderInsertReturning `shouldEqual` "INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id, name"
 
     describe "Builder UPDATE" do
       it "builds UPDATE SET" do
@@ -488,7 +472,7 @@ spec = do
 
     describe "Builder ON CONFLICT" do
       it "builds INSERT ON CONFLICT DO NOTHING" do
-        builderUpsert `shouldSatisfy` contains (Pattern "ON CONFLICT (email) DO NOTHING")
+        builderUpsert `shouldEqual` "INSERT INTO users (age, email, name) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING"
 
     describe "Builder DELETE" do
       it "builds DELETE with WHERE" do
@@ -510,15 +494,9 @@ spec = do
       it "builds LEFT JOIN" do
         typedLeftJoinSQL `shouldEqual` "SELECT users.name, posts.title FROM users LEFT JOIN posts ON users.id = posts.user_id"
       it "builds JOIN with ORDER BY, LIMIT, OFFSET" do
-        let sql = typedJoinLimitOffset # toSQL
-        sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
-        sql `shouldSatisfy` contains (Pattern "ORDER BY users.name")
-        sql `shouldSatisfy` contains (Pattern "LIMIT 10")
-        sql `shouldSatisfy` contains (Pattern "OFFSET 5")
+        (typedJoinLimitOffset # toSQL) `shouldEqual` "SELECT users.name, posts.title FROM users INNER JOIN posts ON users.id = posts.user_id ORDER BY users.name LIMIT 10 OFFSET 5"
       it "builds multi-way JOIN" do
-        let sql = typedMultiJoin # toSQL
-        sql `shouldSatisfy` contains (Pattern "INNER JOIN posts ON")
-        sql `shouldSatisfy` contains (Pattern "INNER JOIN comments ON")
+        (typedMultiJoin # toSQL) `shouldEqual` "SELECT users.name, posts.title, comments.text FROM users INNER JOIN posts ON users.id = posts.user_id INNER JOIN comments ON posts.id = comments.post_id"
 
 integrationSpec :: PG.Connection -> Spec Unit
 integrationSpec conn = do
