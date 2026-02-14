@@ -858,47 +858,146 @@ else instance
   ResolveAggregateArgColByHead head col tables unwrapped
 
 -- Map (funcName, argType) -> returnType
+-- Dispatches on first character to avoid linear search
 class AggregateReturnType :: Symbol -> Type -> Type -> Constraint
 class AggregateReturnType funcName argType returnType | funcName argType -> returnType
 
-instance AggregateReturnType "COUNT" argType Int
-else instance AggregateReturnType "count" argType Int
-else instance AggregateReturnType "SUM" argType argType
-else instance AggregateReturnType "sum" argType argType
-else instance AggregateReturnType "AVG" argType Number
-else instance AggregateReturnType "avg" argType Number
-else instance AggregateReturnType "MIN" argType argType
-else instance AggregateReturnType "min" argType argType
-else instance AggregateReturnType "MAX" argType argType
-else instance AggregateReturnType "max" argType argType
-else instance AggregateReturnType "ARRAY_AGG" argType (Array argType)
-else instance AggregateReturnType "array_agg" argType (Array argType)
-else instance AggregateReturnType "STRING_AGG" argType String
-else instance AggregateReturnType "string_agg" argType String
-else instance AggregateReturnType "COALESCE" argType argType
-else instance AggregateReturnType "coalesce" argType argType
--- Window functions
-else instance AggregateReturnType "ROW_NUMBER" argType Int
-else instance AggregateReturnType "row_number" argType Int
-else instance AggregateReturnType "RANK" argType Int
-else instance AggregateReturnType "rank" argType Int
-else instance AggregateReturnType "DENSE_RANK" argType Int
-else instance AggregateReturnType "dense_rank" argType Int
-else instance AggregateReturnType "NTILE" argType Int
-else instance AggregateReturnType "ntile" argType Int
-else instance AggregateReturnType "LAG" argType argType
-else instance AggregateReturnType "lag" argType argType
-else instance AggregateReturnType "LEAD" argType argType
-else instance AggregateReturnType "lead" argType argType
-else instance AggregateReturnType "FIRST_VALUE" argType argType
-else instance AggregateReturnType "first_value" argType argType
-else instance AggregateReturnType "LAST_VALUE" argType argType
-else instance AggregateReturnType "last_value" argType argType
-else instance AggregateReturnType "NTH_VALUE" argType argType
-else instance AggregateReturnType "nth_value" argType argType
+instance
+  ( Symbol.Cons head rest funcName
+  , AggregateReturnTypeByHead head funcName argType returnType
+  ) =>
+  AggregateReturnType funcName argType returnType
+
+class AggregateReturnTypeByHead :: Symbol -> Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeByHead head funcName argType returnType | head funcName argType -> returnType
+
+instance AggregateReturnTypeA funcName argType returnType => AggregateReturnTypeByHead "A" funcName argType returnType
+else instance AggregateReturnTypeA funcName argType returnType => AggregateReturnTypeByHead "a" funcName argType returnType
+else instance AggregateReturnTypeC funcName argType returnType => AggregateReturnTypeByHead "C" funcName argType returnType
+else instance AggregateReturnTypeC funcName argType returnType => AggregateReturnTypeByHead "c" funcName argType returnType
+else instance AggregateReturnTypeD funcName argType returnType => AggregateReturnTypeByHead "D" funcName argType returnType
+else instance AggregateReturnTypeD funcName argType returnType => AggregateReturnTypeByHead "d" funcName argType returnType
+else instance AggregateReturnTypeF funcName argType returnType => AggregateReturnTypeByHead "F" funcName argType returnType
+else instance AggregateReturnTypeF funcName argType returnType => AggregateReturnTypeByHead "f" funcName argType returnType
+else instance AggregateReturnTypeL funcName argType returnType => AggregateReturnTypeByHead "L" funcName argType returnType
+else instance AggregateReturnTypeL funcName argType returnType => AggregateReturnTypeByHead "l" funcName argType returnType
+else instance AggregateReturnTypeM funcName argType returnType => AggregateReturnTypeByHead "M" funcName argType returnType
+else instance AggregateReturnTypeM funcName argType returnType => AggregateReturnTypeByHead "m" funcName argType returnType
+else instance AggregateReturnTypeN funcName argType returnType => AggregateReturnTypeByHead "N" funcName argType returnType
+else instance AggregateReturnTypeN funcName argType returnType => AggregateReturnTypeByHead "n" funcName argType returnType
+else instance AggregateReturnTypeR funcName argType returnType => AggregateReturnTypeByHead "R" funcName argType returnType
+else instance AggregateReturnTypeR funcName argType returnType => AggregateReturnTypeByHead "r" funcName argType returnType
+else instance AggregateReturnTypeS funcName argType returnType => AggregateReturnTypeByHead "S" funcName argType returnType
+else instance AggregateReturnTypeS funcName argType returnType => AggregateReturnTypeByHead "s" funcName argType returnType
 else instance
   Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
-  AggregateReturnType funcName argType returnType
+  AggregateReturnTypeByHead head funcName argType returnType
+
+-- A: AVG, ARRAY_AGG
+class AggregateReturnTypeA :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeA funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeA "AVG" argType Number
+else instance AggregateReturnTypeA "avg" argType Number
+else instance AggregateReturnTypeA "ARRAY_AGG" argType (Array argType)
+else instance AggregateReturnTypeA "array_agg" argType (Array argType)
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeA funcName argType returnType
+
+-- C: COUNT, COALESCE
+class AggregateReturnTypeC :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeC funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeC "COUNT" argType Int
+else instance AggregateReturnTypeC "count" argType Int
+else instance AggregateReturnTypeC "COALESCE" argType argType
+else instance AggregateReturnTypeC "coalesce" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeC funcName argType returnType
+
+-- D: DENSE_RANK
+class AggregateReturnTypeD :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeD funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeD "DENSE_RANK" argType Int
+else instance AggregateReturnTypeD "dense_rank" argType Int
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeD funcName argType returnType
+
+-- F: FIRST_VALUE
+class AggregateReturnTypeF :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeF funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeF "FIRST_VALUE" argType argType
+else instance AggregateReturnTypeF "first_value" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeF funcName argType returnType
+
+-- L: LAG, LEAD, LAST_VALUE
+class AggregateReturnTypeL :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeL funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeL "LAG" argType argType
+else instance AggregateReturnTypeL "lag" argType argType
+else instance AggregateReturnTypeL "LEAD" argType argType
+else instance AggregateReturnTypeL "lead" argType argType
+else instance AggregateReturnTypeL "LAST_VALUE" argType argType
+else instance AggregateReturnTypeL "last_value" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeL funcName argType returnType
+
+-- M: MIN, MAX
+class AggregateReturnTypeM :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeM funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeM "MIN" argType argType
+else instance AggregateReturnTypeM "min" argType argType
+else instance AggregateReturnTypeM "MAX" argType argType
+else instance AggregateReturnTypeM "max" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeM funcName argType returnType
+
+-- N: NTILE, NTH_VALUE
+class AggregateReturnTypeN :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeN funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeN "NTILE" argType Int
+else instance AggregateReturnTypeN "ntile" argType Int
+else instance AggregateReturnTypeN "NTH_VALUE" argType argType
+else instance AggregateReturnTypeN "nth_value" argType argType
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeN funcName argType returnType
+
+-- R: ROW_NUMBER, RANK
+class AggregateReturnTypeR :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeR funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeR "ROW_NUMBER" argType Int
+else instance AggregateReturnTypeR "row_number" argType Int
+else instance AggregateReturnTypeR "RANK" argType Int
+else instance AggregateReturnTypeR "rank" argType Int
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeR funcName argType returnType
+
+-- S: SUM, STRING_AGG
+class AggregateReturnTypeS :: Symbol -> Type -> Type -> Constraint
+class AggregateReturnTypeS funcName argType returnType | funcName argType -> returnType
+
+instance AggregateReturnTypeS "SUM" argType argType
+else instance AggregateReturnTypeS "sum" argType argType
+else instance AggregateReturnTypeS "STRING_AGG" argType String
+else instance AggregateReturnTypeS "string_agg" argType String
+else instance
+  Fail (Beside (Text "Unknown function: ") (Quote funcName)) =>
+  AggregateReturnTypeS funcName argType returnType
 
 -- After aggregate ): require AS alias, then continue
 class ParseAfterAggregate :: Symbol -> Row (Row Type) -> Type -> RL.RowList Type -> RL.RowList Type -> Constraint
