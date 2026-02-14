@@ -97,6 +97,10 @@ typedJsonbWhere
   :: Q _ _ (metadata :: Jsonb) _
 typedJsonbWhere = from eventsTable # selectAll # where_ @"metadata @> $metadata"
 
+typedJsonbInvalid
+  :: Q _ _ (metadata :: Jsonb) _
+typedJsonbInvalid = from eventsTable # selectAll # where_ @"metadata !* $metadata"
+
 typedTitleLike
   :: Q _ _ (title :: String) _
 typedTitleLike = from eventsTable # selectAll # where_ @"title LIKE $title"
