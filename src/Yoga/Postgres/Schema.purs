@@ -4,9 +4,11 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array (intercalate, mapWithIndex, foldl)
-import Data.DateTime (DateTime)
+import Data.Date (Date)
+import Data.DateTime (DateTime(..), date, time)
 import Data.JSDate as JSDate
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
+import Data.Time (Time)
 import Data.Newtype (class Newtype)
 import Data.Nullable (toNullable)
 import Data.UUID (UUID)
@@ -16,13 +18,13 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.String.Regex (regex, replace') as Regex
 import Data.String.Regex (Regex) as Regex
 import Data.String.Regex.Flags (global) as Regex
-import Control.Monad.Except (runExcept)
-import Data.Either (Either(..))
+import Control.Monad.Except (except, runExcept)
+import Data.Either (Either(..), note)
 import Data.Map as Map
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Type.Function (type (#))
 import Effect.Aff (Aff)
-import Foreign (Foreign, unsafeToForeign)
+import Foreign (Foreign, ForeignError(..), unsafeToForeign)
 import Prim.Boolean (True, False)
 import Prim.Row (class Cons, class Lacks, class Union, class Nub) as Row
 import Prim.RowList as RL
@@ -99,6 +101,38 @@ instance ReadForeign PGUUID where
     pure (unsafeCoerce s)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- PGDate / PGTime: newtypes for DATE and TIME columns
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype PGDate = PGDate Date
+
+derive instance Newtype PGDate _
+derive instance Eq PGDate
+derive instance Ord PGDate
+instance Show PGDate where
+  show (PGDate d) = "(PGDate " <> show d <> ")"
+
+instance ReadForeign PGDate where
+  readImpl = readImpl >=>
+    JSDate.toDate
+      >>> note (pure (ForeignError "Invalid date"))
+      >>> except
+      >>> map PGDate
+
+newtype PGTime = PGTime Time
+
+derive instance Newtype PGTime _
+derive instance Eq PGTime
+derive instance Ord PGTime
+instance Show PGTime where
+  show (PGTime t) = "(PGTime " <> show t <> ")"
+
+instance ReadForeign PGTime where
+  readImpl f = do
+    dt :: DateTime <- readImpl f
+    pure (PGTime (time dt))
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -153,6 +187,12 @@ instance PGTypeName BigInt where
 
 instance PGTypeName PGUUID where
   pgTypeName _ = "UUID"
+
+instance PGTypeName PGDate where
+  pgTypeName _ = "DATE"
+
+instance PGTypeName PGTime where
+  pgTypeName _ = "TIME"
 
 instance PGTypeName Jsonb where
   pgTypeName _ = "JSONB"
@@ -1523,7 +1563,8 @@ else instance
 class FlushWhereWordD :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordD word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordD "date" currentType tables paramsIn currentType paramsIn
+instance FlushWhereWordD "DATE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordD "date" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1659,6 +1700,8 @@ else instance FlushWhereWordT "true" currentType tables paramsIn currentType par
 else instance FlushWhereWordT "text" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "timestamptz" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "timestamp" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "TIME" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "time" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -2471,6 +2514,8 @@ instance FieldToPGValue a => FieldToPGValue (Maybe a) where
   fieldToPGValue = toNullable >>> unsafeCoerce
 else instance FieldToPGValue DateTime where
   fieldToPGValue = JSDate.fromDateTime >>> unsafeCoerce
+else instance FieldToPGValue PGDate where
+  fieldToPGValue (PGDate d) = JSDate.fromDateTime (DateTime d bottom) # unsafeCoerce
 else instance FieldToPGValue a where
   fieldToPGValue = unsafeCoerce
 

@@ -682,6 +682,31 @@ builderSessionInsert :: String
 builderSessionInsert = typedSessionInsert # toSQL
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- PGDate + PGTime
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type ScheduleTable = Table "schedule"
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , event_date :: PGDate
+  , start_time :: PGTime
+  , title :: String
+  )
+
+scheduleTable :: Proxy ScheduleTable
+scheduleTable = Proxy
+
+scheduleDDL :: String
+scheduleDDL = createTableDDL @ScheduleTable
+
+typedScheduleSelect
+  :: Q _ (event_date :: PGDate, start_time :: PGTime, title :: String) () _
+typedScheduleSelect = from scheduleTable # select @"event_date, start_time, title"
+
+typedScheduleWhere
+  :: Q _ _ (d :: PGDate) _
+typedScheduleWhere = from scheduleTable # selectAll # where_ @"event_date = $d"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -721,6 +746,10 @@ spec = do
         builderSessionSelect `shouldEqual` "SELECT id, token FROM sessions"
       it "builds INSERT skipping DefaultExpr columns" do
         builderSessionInsert `shouldEqual` "INSERT INTO sessions (token, user_id) VALUES ($1, $2)"
+
+    describe "PGDate + PGTime" do
+      it "renders DATE and TIME in DDL" do
+        scheduleDDL `shouldEqual` "CREATE TABLE schedule (event_date DATE NOT NULL, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, start_time TIME NOT NULL, title TEXT NOT NULL)"
 
     describe "UPDATE SQL" do
       it "generates UPDATE with SET and WHERE" do
