@@ -176,6 +176,13 @@ typedWhereComplex
        _
 typedWhereComplex = from usersTable # selectAll # where_ @"name = $name AND age > $age"
 
+typedWhereStringLiteral
+  :: Q _
+       (age :: Maybe Int, email :: String, id :: Int, name :: String)
+       (status :: String)
+       _
+typedWhereStringLiteral = from usersTable # selectAll # where_ @"name = $status AND email != 'test@example.com'"
+
 typedSelectColsWhere
   :: Q _
        (name :: String)

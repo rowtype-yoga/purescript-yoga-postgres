@@ -415,6 +415,31 @@ class SkipSpacesGo head tail result | head tail -> result
 instance SkipSpaces tail result => SkipSpacesGo " " tail result
 else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
 
+-- Skip a string literal: consume chars until closing single quote
+class SkipStringLiteral :: Symbol -> Symbol -> Constraint
+class SkipStringLiteral sym rest | sym -> rest
+
+instance Fail (Text "Unclosed string literal in WHERE clause") => SkipStringLiteral "" rest
+else instance
+  ( Symbol.Cons h t sym
+  , SkipStringLiteralGo h t rest
+  ) =>
+  SkipStringLiteral sym rest
+
+class SkipStringLiteralGo :: Symbol -> Symbol -> Symbol -> Constraint
+class SkipStringLiteralGo head tail rest | head tail -> rest
+
+-- Closing quote: done
+instance SkipStringLiteralGo "'" tail tail
+-- End of string without closing quote
+else instance Fail (Text "Unclosed string literal in WHERE clause") => SkipStringLiteralGo h "" rest
+-- Any other char: skip and continue
+else instance
+  ( Symbol.Cons nextH nextT tail
+  , SkipStringLiteralGo nextH nextT rest
+  ) =>
+  SkipStringLiteralGo h tail rest
+
 -- Extract the first word from a Symbol (up to space or end)
 class ExtractWord :: Symbol -> Symbol -> Symbol -> Constraint
 class ExtractWord sym word rest | sym -> word rest
@@ -1277,7 +1302,13 @@ else instance (FlushWhereWord acc currentType tables paramsIn currentType' param
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "!" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "(" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ")" tail acc currentType tables paramsIn paramsOut
-else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "'" tail acc currentType tables paramsIn paramsOut
+-- String literal: flush word, skip until closing quote
+else instance
+  ( FlushWhereWord acc currentType tables paramsIn currentType' paramsOut'
+  , SkipStringLiteral tail rest
+  , ParseWhereContinue rest currentType' tables paramsOut' paramsOut
+  ) =>
+  ParseWhereGo "'" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "@" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "?" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ":" tail acc currentType tables paramsIn paramsOut
