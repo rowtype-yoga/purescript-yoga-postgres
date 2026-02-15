@@ -1,5 +1,5 @@
 -- EXPECT: Unclosed string literal
-module Test.CompileFail.UnclosedStringLiteral where
+module Test.CompileFail.UnclosedStringLiteralJoin where
 
 import Prelude
 import Data.Maybe (Maybe(..))
@@ -14,7 +14,16 @@ type UsersTable = Table "users"
   , age :: Maybe Int
   )
 
+type PostsTable = Table "posts"
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , user_id :: Int
+  , title :: String
+  )
+
 usersTable :: Proxy UsersTable
 usersTable = Proxy
 
-bad = from usersTable # selectAll # where_ @"name = 'unclosed"
+postsTable :: Proxy PostsTable
+postsTable = Proxy
+
+bad = from usersTable # select @"users.name" # innerJoin @"users.id = 'unclosed" postsTable

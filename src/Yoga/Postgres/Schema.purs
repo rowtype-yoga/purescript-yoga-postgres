@@ -419,7 +419,7 @@ else instance Symbol.Cons head tail result => SkipSpacesGo head tail result
 class SkipStringLiteral :: Symbol -> Symbol -> Constraint
 class SkipStringLiteral sym rest | sym -> rest
 
-instance Fail (Text "Unclosed string literal in WHERE clause") => SkipStringLiteral "" rest
+instance Fail (Text "Unclosed string literal") => SkipStringLiteral "" rest
 else instance
   ( Symbol.Cons h t sym
   , SkipStringLiteralGo h t rest
@@ -432,7 +432,7 @@ class SkipStringLiteralGo head tail rest | head tail -> rest
 -- Closing quote: done
 instance SkipStringLiteralGo "'" tail tail
 -- End of string without closing quote
-else instance Fail (Text "Unclosed string literal in WHERE clause") => SkipStringLiteralGo h "" rest
+else instance Fail (Text "Unclosed string literal") => SkipStringLiteralGo h "" rest
 -- Any other char: skip and continue
 else instance
   ( Symbol.Cons nextH nextT tail
@@ -2190,6 +2190,14 @@ else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => V
 else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "!" tail acc tables
 else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo "(" tail acc tables
 else instance (FlushJoinWord acc tables, ValidateJoinCondition tail tables) => ValidateJoinCondGo ")" tail acc tables
+
+-- String literal: skip content between quotes
+else instance
+  ( FlushJoinWord acc tables
+  , SkipStringLiteral tail rest
+  , ValidateJoinCondition rest tables
+  ) =>
+  ValidateJoinCondGo "'" tail acc tables
 
 -- End of string: flush final word
 else instance
