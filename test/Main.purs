@@ -433,11 +433,11 @@ main = launchAff_ do
   bracket
     ( do
         liftEffect $ log "Starting Postgres and waiting for it to be ready..."
-        Docker.startService "packages/yoga-postgres/docker-compose.test.yml" 30
+        Docker.startService "docker-compose.test.yml" 30
         liftEffect $ log "Postgres is ready!\n"
     )
     ( \_ -> do
-        Docker.stopService "packages/yoga-postgres/docker-compose.test.yml"
+        Docker.stopService "docker-compose.test.yml"
         liftEffect $ log "Cleanup complete\n"
     )
     (\_ -> runSpec [ consoleReporter ] spec)

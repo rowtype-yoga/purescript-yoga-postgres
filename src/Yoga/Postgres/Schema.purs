@@ -1766,10 +1766,10 @@ else instance FlushWhereWordT "tsvector" currentType tables paramsIn currentType
 else instance FlushWhereWordT "TSVECTOR" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "tsquery" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "TSQUERY" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordT "to_tsvector" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordT "TO_TSVECTOR" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordT "to_tsquery" currentType tables paramsIn currentType paramsIn
-else instance FlushWhereWordT "TO_TSQUERY" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "to_tsvector" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordT "TO_TSVECTOR" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordT "to_tsquery" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordT "TO_TSQUERY" currentType tables paramsIn String paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ

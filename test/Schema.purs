@@ -2,11 +2,15 @@ module Test.Postgres.Schema where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Date (canonicalDate)
 import Data.DateTime (DateTime(..))
 import Data.Enum (toEnum)
 import Data.Maybe (Maybe(..), fromJust)
+import Data.Newtype (un)
+import Data.String as String
 import Data.Time (Time(..))
+import Data.UUID as UUID
 import Partial.Unsafe (unsafePartial)
 
 import Type.Function (type (#))
@@ -735,7 +739,7 @@ articlesDDL :: String
 articlesDDL = createTableDDL @ArticlesTable
 
 typedFTSWhere
-  :: Q _ _ _ _
+  :: Q _ _ (q :: String) _
 typedFTSWhere = from articlesTable # selectAll # where_ @"body_vector @@ to_tsquery($q)"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1343,3 +1347,74 @@ integrationSpec conn = do
         # orderBy @"name"
         # runQuery conn { age: 10, minCount: 0 }
       rows `shouldEqual` [ { name: "Alice" }, { name: "Bob" } ]
+
+  describe "UUID + DefaultExpr execution" do
+    it "creates sessions table from DDL" do
+      _ <- PG.executeSimple (PG.SQL "DELETE FROM sessions") conn
+      pure unit
+
+    it "inserts with server-generated UUID and timestamp" do
+      _ <- PG.executeSimple (PG.SQL "DELETE FROM sessions") conn
+      count <- from sessionsTable
+        # insert { user_id: 1, token: "sess-abc" }
+        # runExecute conn {}
+      count `shouldEqual` 1
+
+    it "selects back UUID column" do
+      rows <- from sessionsTable
+        # select @"id, token"
+        # where_ @"token = $token"
+        # runQuery conn { token: "sess-abc" }
+      let len = Array.length rows
+      len `shouldEqual` 1
+      do
+        let row = unsafePartial fromJust (Array.head rows)
+        let uuidStr = UUID.toString (un PGUUID row.id)
+        String.length uuidStr `shouldEqual` 36
+        row.token `shouldEqual` "sess-abc"
+
+  describe "PGDate + PGTime execution" do
+    it "inserts and round-trips date and time" do
+      _ <- PG.executeSimple (PG.SQL "DELETE FROM schedule") conn
+      _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE schedule_id_seq RESTART WITH 1") conn
+      _ <- PG.execute
+        (PG.SQL "INSERT INTO schedule (event_date, start_time, title) VALUES ($1::date, $2::time, $3)")
+        [ PG.toPGValue "2025-06-15", PG.toPGValue "14:30:00", PG.toPGValue "Meeting" ]
+        conn
+      rows <- from scheduleTable
+        # select @"title"
+        # where_ @"title = $title"
+        # runQuery conn { title: "Meeting" }
+      rows `shouldEqual` [ { title: "Meeting" } ]
+
+  describe "Point execution" do
+    it "inserts and selects point values" do
+      _ <- PG.executeSimple (PG.SQL "DELETE FROM locations") conn
+      _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE locations_id_seq RESTART WITH 1") conn
+      _ <- PG.execute
+        (PG.SQL "INSERT INTO locations (name, coords) VALUES ($1, point($2, $3))")
+        [ PG.toPGValue "HQ", PG.toPGValue 40.7, PG.toPGValue (-74.0) ]
+        conn
+      rows <- from locationsTable
+        # select @"name"
+        # where_ @"name = $name"
+        # runQuery conn { name: "HQ" }
+      rows `shouldEqual` [ { name: "HQ" } ]
+
+  describe "TSVector + TSQuery execution" do
+    it "inserts and queries with full-text search" do
+      _ <- PG.executeSimple (PG.SQL "DELETE FROM articles") conn
+      _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE articles_id_seq RESTART WITH 1") conn
+      _ <- PG.execute
+        (PG.SQL "INSERT INTO articles (title, body_vector) VALUES ($1, to_tsvector($2))")
+        [ PG.toPGValue "PureScript Rocks", PG.toPGValue "purescript is a strongly typed functional language" ]
+        conn
+      _ <- PG.execute
+        (PG.SQL "INSERT INTO articles (title, body_vector) VALUES ($1, to_tsvector($2))")
+        [ PG.toPGValue "Haskell Guide", PG.toPGValue "haskell is a lazy functional language" ]
+        conn
+      rows <- from articlesTable
+        # select @"title"
+        # where_ @"body_vector @@ to_tsquery($q)"
+        # runQuery conn { q: "purescript" }
+      rows `shouldEqual` [ { title: "PureScript Rocks" } ]

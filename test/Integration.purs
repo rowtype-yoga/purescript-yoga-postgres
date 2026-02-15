@@ -20,12 +20,20 @@ main = launchAff_ do
     , username: PG.PostgresUsername "postgres"
     , password: PG.PostgresPassword "postgres"
     }
-  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS posts") conn
-  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS users") conn
-  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS events") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS sessions CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS articles CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS locations CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS schedule CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS posts CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS users CASCADE") conn
+  _ <- PG.executeSimple (PG.SQL "DROP TABLE IF EXISTS events CASCADE") conn
   _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.UsersTable)) conn
   _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.EventsTable)) conn
   _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.PostsTable)) conn
+  _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.SessionsTable)) conn
+  _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.ScheduleTable)) conn
+  _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.LocationsTable)) conn
+  _ <- PG.executeSimple (PG.SQL (createTableDDL @Schema.ArticlesTable)) conn
   _ <- PG.execute (PG.SQL "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")
     [ PG.toPGValue "Alice", PG.toPGValue "alice@example.com", PG.toPGValue 22 ]
     conn
