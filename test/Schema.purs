@@ -644,6 +644,44 @@ typedCoalesceSelect = from usersTable
   # select @"name, COALESCE(age, 0) AS val"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- UUID + DefaultExpr
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type SessionsTable = Table "sessions"
+  ( id :: UUID # PrimaryKey # DefaultExpr "gen_random_uuid()"
+  , user_id :: Int # ForeignKey "users" References "id"
+  , token :: String # Unique
+  , created_at :: DateTime # DefaultExpr "now()"
+  )
+
+sessionsTable :: Proxy SessionsTable
+sessionsTable = Proxy
+
+sessionsDDL :: String
+sessionsDDL = createTableDDL @SessionsTable
+
+sessionsInsertSQL :: String
+sessionsInsertSQL = insertSQLFor @SessionsTable
+
+typedSessionSelect
+  :: Q _ (id :: UUID, token :: String) () _
+typedSessionSelect = from sessionsTable # select @"id, token"
+
+typedSessionWhere
+  :: Q _ (id :: UUID, token :: String, user_id :: Int, created_at :: DateTime) (userId :: Int) _
+typedSessionWhere = from sessionsTable # selectAll # where_ @"user_id = $userId"
+
+typedSessionInsert
+  :: Q _ () () _
+typedSessionInsert = from sessionsTable # insert { user_id: 42, token: "abc" }
+
+builderSessionSelect :: String
+builderSessionSelect = typedSessionSelect # toSQL
+
+builderSessionInsert :: String
+builderSessionInsert = typedSessionInsert # toSQL
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -673,6 +711,16 @@ spec = do
         configDDL `shouldEqual` "CREATE TABLE config (active BOOLEAN NOT NULL DEFAULT true, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, role TEXT NOT NULL DEFAULT 'user', score INTEGER NOT NULL DEFAULT 0)"
       it "skips Default columns in INSERT" do
         configInsertSQL `shouldEqual` "INSERT INTO config () VALUES () RETURNING *"
+
+    describe "UUID + DefaultExpr" do
+      it "renders UUID and DefaultExpr in DDL" do
+        sessionsDDL `shouldEqual` "CREATE TABLE sessions (created_at TIMESTAMPTZ NOT NULL DEFAULT now(), id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, token TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL REFERENCES users(id))"
+      it "skips DefaultExpr columns in INSERT" do
+        sessionsInsertSQL `shouldEqual` "INSERT INTO sessions (token, user_id) VALUES ($1, $2) RETURNING *"
+      it "builds SELECT with UUID column" do
+        builderSessionSelect `shouldEqual` "SELECT id, token FROM sessions"
+      it "builds INSERT skipping DefaultExpr columns" do
+        builderSessionInsert `shouldEqual` "INSERT INTO sessions (token, user_id) VALUES ($1, $2)"
 
     describe "UPDATE SQL" do
       it "generates UPDATE with SET and WHERE" do
