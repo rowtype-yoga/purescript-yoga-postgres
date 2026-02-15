@@ -1251,7 +1251,7 @@ data NoType
 class ParseWhere :: Symbol -> Row (Row Type) -> Row Type -> Constraint
 class ParseWhere sym tables params | sym tables -> params
 
-instance ParseWhere "" tables ()
+instance Fail (Text "Empty WHERE clause") => ParseWhere "" tables params
 else instance
   ( Symbol.Cons h t sym
   , ParseWhereGo h t "" NoType tables RL.Nil outRL
@@ -1671,11 +1671,16 @@ else instance
 class ValidateOrderByGo :: Symbol -> Symbol -> Symbol -> Row (Row Type) -> Constraint
 class ValidateOrderByGo head tail acc tables
 
--- Comma: flush column, continue
+-- Leading/double comma: no column before comma
 instance
+  Fail (Text "Unexpected comma in ORDER BY clause (missing column name)") =>
+  ValidateOrderByGo "," tail "" tables
+
+-- Comma: flush column, continue (non-empty acc)
+else instance
   ( FlushOrderByWord acc tables
   , SkipSpaces tail rest
-  , ValidateOrderBy rest tables
+  , ValidateOrderByContinueNonEmpty rest tables
   ) =>
   ValidateOrderByGo "," tail acc tables
 
@@ -1689,7 +1694,7 @@ else instance
 -- End of string: flush final column
 else instance
   ( Symbol.Append acc h acc'
-  , FlushOrderByWord acc' tables
+  , FlushOrderByFinalWord acc' tables
   ) =>
   ValidateOrderByGo h "" acc tables
 
@@ -1700,6 +1705,31 @@ else instance
   , ValidateOrderByGo nextH nextT acc' tables
   ) =>
   ValidateOrderByGo h tail acc tables
+
+-- After comma: reject empty (trailing comma)
+class ValidateOrderByContinueNonEmpty :: Symbol -> Row (Row Type) -> Constraint
+class ValidateOrderByContinueNonEmpty sym tables
+
+instance Fail (Text "Trailing comma in ORDER BY clause") => ValidateOrderByContinueNonEmpty "" tables
+else instance
+  ( Symbol.Cons h t sym
+  , ValidateOrderByGo h t "" tables
+  ) =>
+  ValidateOrderByContinueNonEmpty sym tables
+
+-- End of string: reject bare modifiers (ASC/DESC without column)
+class FlushOrderByFinalWord :: Symbol -> Row (Row Type) -> Constraint
+class FlushOrderByFinalWord word tables
+
+instance Fail (Text "ORDER BY requires at least one column") => FlushOrderByFinalWord "" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "ASC" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "asc" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "DESC" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "desc" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "NULLS" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "FIRST" tables
+else instance Fail (Text "ORDER BY requires a column name before ASC/DESC") => FlushOrderByFinalWord "LAST" tables
+else instance ResolveColumn word tables typ => FlushOrderByFinalWord word tables
 
 class FlushOrderByWord :: Symbol -> Row (Row Type) -> Constraint
 class FlushOrderByWord word tables
@@ -2570,15 +2600,65 @@ instance
 
 instance ParseLimitOffsetParams False name params params
 
+-- Validate that a Symbol is a non-negative integer (all digits, non-empty)
+class ValidateNumericLiteral :: Symbol -> Constraint
+class ValidateNumericLiteral sym
+
+instance
+  ( Symbol.Cons h t sym
+  , ValidateAllDigits h t
+  ) =>
+  ValidateNumericLiteral sym
+
+class ValidateAllDigits :: Symbol -> Symbol -> Constraint
+class ValidateAllDigits head tail
+
+instance ValidateAllDigits "0" ""
+else instance ValidateAllDigits "1" ""
+else instance ValidateAllDigits "2" ""
+else instance ValidateAllDigits "3" ""
+else instance ValidateAllDigits "4" ""
+else instance ValidateAllDigits "5" ""
+else instance ValidateAllDigits "6" ""
+else instance ValidateAllDigits "7" ""
+else instance ValidateAllDigits "8" ""
+else instance ValidateAllDigits "9" ""
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "0" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "1" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "2" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "3" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "4" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "5" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "6" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "7" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "8" tail
+else instance (Symbol.Cons h2 t2 tail, ValidateAllDigits h2 t2) => ValidateAllDigits "9" tail
+else instance
+  Fail (Beside (Text "LIMIT/OFFSET must be a non-negative integer or $parameter, got: ") (Quote sym)) =>
+  ValidateAllDigits head tail
+
 class ParseLimitOffset :: Symbol -> Row Type -> Row Type -> Constraint
 class ParseLimitOffset sym params params' | sym params -> params'
 
 instance
   ( Symbol.Cons head tail sym
   , IsLimitParam head tail isParam
-  , ParseLimitOffsetParams isParam tail params params'
+  , ParseLimitOffsetBranch isParam sym tail params params'
   ) =>
   ParseLimitOffset sym params params'
+
+class ParseLimitOffsetBranch :: Boolean -> Symbol -> Symbol -> Row Type -> Row Type -> Constraint
+class ParseLimitOffsetBranch isParam sym paramName params params' | isParam sym paramName params -> params'
+
+instance
+  ( Row.Lacks paramName params
+  , Row.Cons paramName Int params params'
+  ) =>
+  ParseLimitOffsetBranch True sym paramName params params'
+
+instance
+  ValidateNumericLiteral sym =>
+  ParseLimitOffsetBranch False sym paramName params params
 
 limit
   :: forall @sym tables result params params' stage stage'
