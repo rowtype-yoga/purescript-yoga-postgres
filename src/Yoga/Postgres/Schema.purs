@@ -133,6 +133,51 @@ instance ReadForeign PGTime where
     pure (PGTime (time dt))
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Point: geometric point "(x,y)"
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype Point = Point { x :: Number, y :: Number }
+
+derive instance Newtype Point _
+derive instance Eq Point
+
+instance Show Point where
+  show (Point { x, y }) = "(Point " <> show x <> " " <> show y <> ")"
+
+instance ReadForeign Point where
+  readImpl f = do
+    { x, y } :: { x :: Number, y :: Number } <- readImpl f
+    pure (Point { x, y })
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- TSVector / TSQuery: full-text search types
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+newtype TSVector = TSVector String
+
+derive instance Newtype TSVector _
+derive newtype instance Eq TSVector
+derive newtype instance Ord TSVector
+derive newtype instance Show TSVector
+
+instance ReadForeign TSVector where
+  readImpl f = do
+    s :: String <- readImpl f
+    pure (TSVector s)
+
+newtype TSQuery = TSQuery String
+
+derive instance Newtype TSQuery _
+derive newtype instance Eq TSQuery
+derive newtype instance Ord TSQuery
+derive newtype instance Show TSQuery
+
+instance ReadForeign TSQuery where
+  readImpl f = do
+    s :: String <- readImpl f
+    pure (TSQuery s)
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -193,6 +238,15 @@ instance PGTypeName PGDate where
 
 instance PGTypeName PGTime where
   pgTypeName _ = "TIME"
+
+instance PGTypeName Point where
+  pgTypeName _ = "POINT"
+
+instance PGTypeName TSVector where
+  pgTypeName _ = "TSVECTOR"
+
+instance PGTypeName TSQuery where
+  pgTypeName _ = "TSQUERY"
 
 instance PGTypeName Jsonb where
   pgTypeName _ = "JSONB"
@@ -1489,8 +1543,12 @@ else instance FlushWhereWordU word currentType tables paramsIn currentTypeOut pa
 else instance FlushWhereWordU word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "u" word currentType tables paramsIn currentTypeOut paramsOut
 else instance FlushWhereWordV word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "V" word currentType tables paramsIn currentTypeOut paramsOut
 else instance FlushWhereWordV word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "v" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordP word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "P" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordP word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "p" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordR word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "R" word currentType tables paramsIn currentTypeOut paramsOut
+else instance FlushWhereWordR word currentType tables paramsIn currentTypeOut paramsOut => FlushWhereWordByHead "r" word currentType tables paramsIn currentTypeOut paramsOut
 
--- Catch-all: column reference (letters without keywords like g, h, p, q, r, w, x, y, z)
+-- Catch-all: column reference (letters without keywords like g, h, q, w, x, y, z)
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1679,7 +1737,9 @@ else instance
 class FlushWhereWordS :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordS word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordS "SUM" currentType tables paramsIn currentType paramsIn
+instance FlushWhereWordS "SMALLINT" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordS "smallint" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordS "SUM" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordS "sum" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordS "STRING_AGG" currentType tables paramsIn String paramsIn
 else instance FlushWhereWordS "string_agg" currentType tables paramsIn String paramsIn
@@ -1702,6 +1762,14 @@ else instance FlushWhereWordT "timestamptz" currentType tables paramsIn currentT
 else instance FlushWhereWordT "timestamp" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "TIME" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "time" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "tsvector" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "TSVECTOR" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "tsquery" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "TSQUERY" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "to_tsvector" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "TO_TSVECTOR" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "to_tsquery" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordT "TO_TSQUERY" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1732,6 +1800,32 @@ else instance
   , UnwrapMaybe typ unwrapped
   ) =>
   FlushWhereWordV word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordP :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordP word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordP "point" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordP "POINT" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordP "plainto_tsquery" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordP "PLAINTO_TSQUERY" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordP word currentType tables paramsIn unwrapped paramsIn
+
+class FlushWhereWordR :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
+class FlushWhereWordR word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
+
+instance FlushWhereWordR "real" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordR "REAL" currentType tables paramsIn currentType paramsIn
+else instance
+  ( ResolveColumn word tables entry
+  , ExtractType entry typ
+  , UnwrapMaybe typ unwrapped
+  ) =>
+  FlushWhereWordR word currentType tables paramsIn unwrapped paramsIn
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- ValidateColumnList: comma-separated column references

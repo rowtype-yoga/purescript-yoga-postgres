@@ -707,6 +707,38 @@ typedScheduleWhere
 typedScheduleWhere = from scheduleTable # selectAll # where_ @"event_date = $d"
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Point + TSVector + TSQuery
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type LocationsTable = Table "locations"
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , name :: String
+  , coords :: Point
+  )
+
+locationsTable :: Proxy LocationsTable
+locationsTable = Proxy
+
+locationsDDL :: String
+locationsDDL = createTableDDL @LocationsTable
+
+type ArticlesTable = Table "articles"
+  ( id :: Int # PrimaryKey # AutoIncrement
+  , title :: String
+  , body_vector :: TSVector
+  )
+
+articlesTable :: Proxy ArticlesTable
+articlesTable = Proxy
+
+articlesDDL :: String
+articlesDDL = createTableDDL @ArticlesTable
+
+typedFTSWhere
+  :: Q _ _ _ _
+typedFTSWhere = from articlesTable # selectAll # where_ @"body_vector @@ to_tsquery($q)"
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Spec
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -750,6 +782,12 @@ spec = do
     describe "PGDate + PGTime" do
       it "renders DATE and TIME in DDL" do
         scheduleDDL `shouldEqual` "CREATE TABLE schedule (event_date DATE NOT NULL, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, start_time TIME NOT NULL, title TEXT NOT NULL)"
+
+    describe "Point + TSVector + TSQuery" do
+      it "renders POINT in DDL" do
+        locationsDDL `shouldEqual` "CREATE TABLE locations (coords POINT NOT NULL, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name TEXT NOT NULL)"
+      it "renders TSVECTOR in DDL" do
+        articlesDDL `shouldEqual` "CREATE TABLE articles (body_vector TSVECTOR NOT NULL, id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY, title TEXT NOT NULL)"
 
     describe "UPDATE SQL" do
       it "generates UPDATE with SET and WHERE" do
