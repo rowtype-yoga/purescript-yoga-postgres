@@ -5,10 +5,11 @@ import Prelude
 import Data.Array as Array
 import Data.Array (intercalate, mapWithIndex, foldl)
 import Data.Date (Date)
+import Data.Enum (toEnum)
 import Data.DateTime (DateTime(..), date, time)
 import Data.JSDate as JSDate
-import Data.Maybe (Maybe(..), maybe)
-import Data.Time (Time)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Time (Time(..))
 import Data.Newtype (class Newtype)
 import Data.Nullable (toNullable)
 import Data.UUID (UUID)
@@ -20,7 +21,12 @@ import Data.String.Regex (Regex) as Regex
 import Data.String.Regex.Flags (global) as Regex
 import Control.Monad.Except (except, runExcept)
 import Data.Either (Either(..), note)
+import Data.Int as Int
 import Data.List.Types (NonEmptyList)
+import Data.Number as Number
+import Data.String.Common as Str
+import Data.String.Pattern (Pattern(..))
+import Data.String.CodeUnits as SCU
 import Data.Traversable (traverse)
 import Effect.Exception (error) as Exception
 import Data.Map as Map
@@ -116,11 +122,11 @@ instance Show PGDate where
   show (PGDate d) = "(PGDate " <> show d <> ")"
 
 instance ReadForeign PGDate where
-  readImpl = readImpl >=>
-    JSDate.toDate
-      >>> note (pure (ForeignError "Invalid date"))
-      >>> except
-      >>> map PGDate
+  readImpl f =
+    except $ note (pure (ForeignError "Invalid date")) (JSDate.toDate jsDate <#> PGDate)
+    where
+    jsDate :: JSDate.JSDate
+    jsDate = unsafeCoerce f
 
 newtype PGTime = PGTime Time
 
@@ -132,8 +138,20 @@ instance Show PGTime where
 
 instance ReadForeign PGTime where
   readImpl f = do
-    dt :: DateTime <- readImpl f
-    pure (PGTime (time dt))
+    s :: String <- readImpl f
+    except $ note (pure (ForeignError ("Invalid time: " <> s))) (parseTime s)
+    where
+    parseTime str = do
+      let parts = Str.split (Pattern ":") str
+      case parts of
+        [ hStr, mStr, sStr ] -> do
+          h <- Int.fromString hStr >>= toEnum
+          mi <- Int.fromString mStr >>= toEnum
+          let secParts = Str.split (Pattern ".") sStr
+          s <- Int.fromString (fromMaybe sStr (Array.head secParts)) >>= toEnum
+          let ms = fromMaybe bottom (Array.index secParts 1 >>= Int.fromString >>= toEnum)
+          pure (PGTime (Time h mi s ms))
+        _ -> Nothing
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Point: geometric point "(x,y)"
@@ -149,8 +167,18 @@ instance Show Point where
 
 instance ReadForeign Point where
   readImpl f = do
-    { x, y } :: { x :: Number, y :: Number } <- readImpl f
-    pure (Point { x, y })
+    s :: String <- readImpl f
+    except $ note (pure (ForeignError ("Invalid point: " <> s))) (parsePoint s)
+    where
+    parsePoint str = do
+      let inner = SCU.drop 1 (SCU.dropRight 1 str)
+      let parts = Str.split (Pattern ",") inner
+      case parts of
+        [ xStr, yStr ] -> do
+          x <- Number.fromString xStr
+          y <- Number.fromString yStr
+          pure (Point { x, y })
+        _ -> Nothing
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- TSVector / TSQuery: full-text search types

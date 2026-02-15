@@ -1374,7 +1374,7 @@ integrationSpec conn = do
         row.token `shouldEqual` "sess-abc"
 
   describe "PGDate + PGTime execution" do
-    it "inserts and round-trips date and time" do
+    it "round-trips date and time values" do
       _ <- PG.executeSimple (PG.SQL "DELETE FROM schedule") conn
       _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE schedule_id_seq RESTART WITH 1") conn
       _ <- PG.execute
@@ -1382,13 +1382,26 @@ integrationSpec conn = do
         [ PG.toPGValue "2025-06-15", PG.toPGValue "14:30:00", PG.toPGValue "Meeting" ]
         conn
       rows <- from scheduleTable
-        # select @"title"
+        # select @"event_date, start_time, title"
         # where_ @"title = $title"
         # runQuery conn { title: "Meeting" }
-      rows `shouldEqual` [ { title: "Meeting" } ]
+      let
+        expectedDate = unsafePartial do
+          let y = fromJust (toEnum 2025)
+          let m = fromJust (toEnum 6)
+          let d = fromJust (toEnum 15)
+          PGDate (canonicalDate y m d)
+      let
+        expectedTime = unsafePartial do
+          let h = fromJust (toEnum 14)
+          let mi = fromJust (toEnum 30)
+          let s = fromJust (toEnum 0)
+          let ms = fromJust (toEnum 0)
+          PGTime (Time h mi s ms)
+      rows `shouldEqual` [ { event_date: expectedDate, start_time: expectedTime, title: "Meeting" } ]
 
   describe "Point execution" do
-    it "inserts and selects point values" do
+    it "round-trips point values" do
       _ <- PG.executeSimple (PG.SQL "DELETE FROM locations") conn
       _ <- PG.executeSimple (PG.SQL "ALTER SEQUENCE locations_id_seq RESTART WITH 1") conn
       _ <- PG.execute
@@ -1396,10 +1409,10 @@ integrationSpec conn = do
         [ PG.toPGValue "HQ", PG.toPGValue 40.7, PG.toPGValue (-74.0) ]
         conn
       rows <- from locationsTable
-        # select @"name"
+        # select @"name, coords"
         # where_ @"name = $name"
         # runQuery conn { name: "HQ" }
-      rows `shouldEqual` [ { name: "HQ" } ]
+      rows `shouldEqual` [ { name: "HQ", coords: Point { x: 40.7, y: -74.0 } } ]
 
   describe "TSVector + TSQuery execution" do
     it "inserts and queries with full-text search" do
