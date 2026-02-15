@@ -9,6 +9,7 @@ import Data.JSDate as JSDate
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Nullable (toNullable)
+import Data.UUID (UUID)
 import JS.BigInt (BigInt)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -82,20 +83,20 @@ instance ReadForeign Jsonb where
   readImpl = pure <<< Jsonb
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- UUID type for Postgres
+-- PGUUID: newtype over Data.UUID.UUID for Postgres integration
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-newtype UUID = UUID String
+newtype PGUUID = PGUUID UUID
 
-derive instance Newtype UUID _
-derive newtype instance Eq UUID
-derive newtype instance Ord UUID
-derive newtype instance Show UUID
+derive instance Newtype PGUUID _
+derive newtype instance Eq PGUUID
+derive newtype instance Ord PGUUID
+derive newtype instance Show PGUUID
 
-instance ReadForeign UUID where
+instance ReadForeign PGUUID where
   readImpl f = do
     s :: String <- readImpl f
-    pure (UUID s)
+    pure (unsafeCoerce s)
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- Nullability: inferred from Maybe
@@ -150,7 +151,7 @@ instance PGTypeName DateTime where
 instance PGTypeName BigInt where
   pgTypeName _ = "BIGINT"
 
-instance PGTypeName UUID where
+instance PGTypeName PGUUID where
   pgTypeName _ = "UUID"
 
 instance PGTypeName Jsonb where

@@ -51,6 +51,9 @@
               "unsafe-coerce": ">=6.0.0 <7.0.0"
             },
             {
+              "uuid": "*"
+            },
+            {
               "yoga-json": ">=5.2.0 <6.0.0"
             },
             {
@@ -79,7 +82,11 @@
         }
       }
     },
-    "extra_packages": {}
+    "extra_packages": {
+      "uuid": {
+        "path": "../purescript-uuid"
+      }
+    }
   },
   "packages": {
     "aff": {
@@ -915,6 +922,15 @@
       "version": "6.0.0",
       "integrity": "sha256-0L1QsaY20OILjfU5TV72d3U/tSjhmL9hJ32WMp857Lk=",
       "dependencies": []
+    },
+    "uuid": {
+      "type": "local",
+      "path": "../purescript-uuid",
+      "dependencies": [
+        "effect",
+        "maybe",
+        "prelude"
+      ]
     },
     "variant": {
       "type": "registry",

@@ -648,7 +648,7 @@ typedCoalesceSelect = from usersTable
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 type SessionsTable = Table "sessions"
-  ( id :: UUID # PrimaryKey # DefaultExpr "gen_random_uuid()"
+  ( id :: PGUUID # PrimaryKey # DefaultExpr "gen_random_uuid()"
   , user_id :: Int # ForeignKey "users" References "id"
   , token :: String # Unique
   , created_at :: DateTime # DefaultExpr "now()"
@@ -664,11 +664,11 @@ sessionsInsertSQL :: String
 sessionsInsertSQL = insertSQLFor @SessionsTable
 
 typedSessionSelect
-  :: Q _ (id :: UUID, token :: String) () _
+  :: Q _ (id :: PGUUID, token :: String) () _
 typedSessionSelect = from sessionsTable # select @"id, token"
 
 typedSessionWhere
-  :: Q _ (id :: UUID, token :: String, user_id :: Int, created_at :: DateTime) (userId :: Int) _
+  :: Q _ (id :: PGUUID, token :: String, user_id :: Int, created_at :: DateTime) (userId :: Int) _
 typedSessionWhere = from sessionsTable # selectAll # where_ @"user_id = $userId"
 
 typedSessionInsert
