@@ -20,10 +20,13 @@ import Data.String.Regex (Regex) as Regex
 import Data.String.Regex.Flags (global) as Regex
 import Control.Monad.Except (except, runExcept)
 import Data.Either (Either(..), note)
+import Data.List.Types (NonEmptyList)
+import Data.Traversable (traverse)
+import Effect.Exception (error) as Exception
 import Data.Map as Map
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Type.Function (type (#))
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, throwError)
 import Foreign (Foreign, ForeignError(..), unsafeToForeign)
 import Prim.Boolean (True, False)
 import Prim.Row (class Cons, class Lacks, class Union, class Nub) as Row
@@ -3346,7 +3349,9 @@ runQuery conn params (Q q) = do
   let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
   let allValues = q.values <> values
   result <- PG.query (PG.SQL sql) allValues conn
-  pure (unsafeDecodeRows result.rows)
+  case decodeRows result.rows of
+    Left errs -> throwError (Exception.error ("Row decode failed: " <> show errs))
+    Right rows -> pure rows
 
 runQueryOne
   :: forall tables result params paramsRL stage
@@ -3362,7 +3367,11 @@ runQueryOne conn params (Q q) = do
   let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
   let allValues = q.values <> values
   result <- PG.queryOne (PG.SQL sql) allValues conn
-  pure (result <#> unsafeDecodeRow)
+  case result of
+    Nothing -> pure Nothing
+    Just row -> case decodeRow row of
+      Left errs -> throwError (Exception.error ("Row decode failed: " <> show errs))
+      Right a -> pure (Just a)
 
 runExecute
   :: forall tables params paramsRL stage
@@ -3394,7 +3403,9 @@ runQueryTx txn params (Q q) = do
   let { sql, values } = replaceNamedParams (Array.length q.values) entries q.sql
   let allValues = q.values <> values
   result <- PG.txQuery (PG.SQL sql) allValues txn
-  pure (unsafeDecodeRows result.rows)
+  case decodeRows result.rows of
+    Left errs -> throwError (Exception.error ("Row decode failed: " <> show errs))
+    Right rows -> pure rows
 
 runExecuteTx
   :: forall tables params paramsRL stage
@@ -3410,10 +3421,8 @@ runExecuteTx txn params (Q q) = do
   let allValues = q.values <> values
   PG.txExecute (PG.SQL sql) allValues txn
 
-unsafeDecodeRows :: forall a. ReadForeign a => Array Foreign -> Array a
-unsafeDecodeRows = map unsafeDecodeRow
+decodeRows :: forall a. ReadForeign a => Array Foreign -> Either (NonEmptyList ForeignError) (Array a)
+decodeRows = traverse (readImpl >>> runExcept)
 
-unsafeDecodeRow :: forall a. ReadForeign a => Foreign -> a
-unsafeDecodeRow f = case runExcept (readImpl f) of
-  Left _ -> unsafeCoerce unit
-  Right a -> a
+decodeRow :: forall a. ReadForeign a => Foreign -> Either (NonEmptyList ForeignError) a
+decodeRow = readImpl >>> runExcept
