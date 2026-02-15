@@ -1314,6 +1314,7 @@ else instance (FlushWhereWord acc currentType tables paramsIn currentType' param
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo ":" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "~" tail acc currentType tables paramsIn paramsOut
 else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "#" tail acc currentType tables paramsIn paramsOut
+else instance (FlushWhereWord acc currentType tables paramsIn currentType' paramsOut', ParseWhereContinue tail currentType' tables paramsOut' paramsOut) => ParseWhereGo "," tail acc currentType tables paramsIn paramsOut
 
 -- End of string: flush final word
 else instance
@@ -1431,7 +1432,9 @@ else instance
 class FlushWhereWordA :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordA word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordA "ANY" currentType tables paramsIn (Array currentType) paramsIn
+instance FlushWhereWordA "ABS" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordA "abs" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordA "ANY" currentType tables paramsIn (Array currentType) paramsIn
 else instance FlushWhereWordA "any" currentType tables paramsIn (Array currentType) paramsIn
 else instance FlushWhereWordA "ALL" currentType tables paramsIn (Array currentType) paramsIn
 else instance FlushWhereWordA "all" currentType tables paramsIn (Array currentType) paramsIn
@@ -1467,8 +1470,18 @@ class FlushWhereWordC word currentType tables paramsIn currentTypeOut paramsOut 
 
 instance FlushWhereWordC "CAST" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordC "cast" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "CEIL" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "ceil" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "COALESCE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "coalesce" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "CONCAT" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "concat" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordC "COUNT" currentType tables paramsIn Int paramsIn
 else instance FlushWhereWordC "count" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWordC "CURRENT_DATE" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "current_date" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "CURRENT_TIMESTAMP" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordC "current_timestamp" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1504,6 +1517,8 @@ class FlushWhereWordF word currentType tables paramsIn currentTypeOut paramsOut 
 
 instance FlushWhereWordF "FALSE" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordF "false" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordF "FLOOR" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordF "floor" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1542,8 +1557,14 @@ else instance
 class FlushWhereWordL :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordL word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordL "LIKE" currentType tables paramsIn currentType paramsIn
+instance FlushWhereWordL "LEAST" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordL "least" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordL "LENGTH" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWordL "length" currentType tables paramsIn Int paramsIn
+else instance FlushWhereWordL "LIKE" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordL "like" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordL "LOWER" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordL "lower" currentType tables paramsIn String paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1570,8 +1591,12 @@ class FlushWhereWordN word currentType tables paramsIn currentTypeOut paramsOut 
 
 instance FlushWhereWordN "NOT" currentType tables paramsIn currentType paramsIn -- unreachable (caught by FlushWhereWord directly) but included for self-containedness
 else instance FlushWhereWordN "not" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "NOW" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "now" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordN "NULL" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordN "null" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "NULLIF" currentType tables paramsIn currentType paramsIn
+else instance FlushWhereWordN "nullif" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
@@ -1596,7 +1621,9 @@ else instance
 class FlushWhereWordT :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordT word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordT "TRUE" currentType tables paramsIn currentType paramsIn
+instance FlushWhereWordT "TRIM" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordT "trim" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordT "TRUE" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "true" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "text" currentType tables paramsIn currentType paramsIn
 else instance FlushWhereWordT "timestamptz" currentType tables paramsIn currentType paramsIn
@@ -1611,7 +1638,9 @@ else instance
 class FlushWhereWordU :: Symbol -> Type -> Row (Row Type) -> RL.RowList Type -> Type -> RL.RowList Type -> Constraint
 class FlushWhereWordU word currentType tables paramsIn currentTypeOut paramsOut | word currentType tables paramsIn -> currentTypeOut paramsOut
 
-instance FlushWhereWordU "uuid" currentType tables paramsIn currentType paramsIn
+instance FlushWhereWordU "UPPER" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordU "upper" currentType tables paramsIn String paramsIn
+else instance FlushWhereWordU "uuid" currentType tables paramsIn currentType paramsIn
 else instance
   ( ResolveColumn word tables entry
   , ExtractType entry typ
