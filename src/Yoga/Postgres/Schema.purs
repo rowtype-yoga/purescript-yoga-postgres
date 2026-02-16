@@ -1090,8 +1090,8 @@ else instance
 class AggregateReturnTypeC :: Symbol -> Type -> Type -> Constraint
 class AggregateReturnTypeC funcName argType returnType | funcName argType -> returnType
 
-instance AggregateReturnTypeC "COUNT" argType Int
-else instance AggregateReturnTypeC "count" argType Int
+instance AggregateReturnTypeC "COUNT" argType BigInt
+else instance AggregateReturnTypeC "count" argType BigInt
 else instance AggregateReturnTypeC "COALESCE" argType argType
 else instance AggregateReturnTypeC "coalesce" argType argType
 else instance
@@ -3346,9 +3346,14 @@ instance
       <> paramsToArray (Proxy :: Proxy tail) rec
 
 namedParamRegex :: Regex.Regex
-namedParamRegex = case Regex.regex "\\$[a-zA-Z_][a-zA-Z0-9_]*" Regex.global of
+namedParamRegex = case Regex.regex "\\$[a-zA-Z_][a-zA-Z0-9_]*(::[a-zA-Z_]+)?" Regex.global of
   Right r -> r
   Left _ -> unsafeCoerce unit
+
+stripCast :: String -> String
+stripCast s = case SCU.indexOf (Pattern "::") s of
+  Nothing -> s
+  Just i -> SCU.take i s
 
 replaceNamedParams :: Int -> Array { name :: String, value :: Foreign } -> String -> { sql :: String, values :: Array PG.PGValue }
 replaceNamedParams offset entries sql = do
@@ -3356,7 +3361,7 @@ replaceNamedParams offset entries sql = do
   let replacements = indexed # foldl (\m e -> Map.insert ("$" <> e.name) ("$" <> show e.idx) m) Map.empty
   let
     sql' = Regex.replace' namedParamRegex
-      ( \match _ -> case Map.lookup match replacements of
+      ( \match _ -> case Map.lookup (stripCast match) replacements of
           Nothing -> match
           Just v -> v
       )

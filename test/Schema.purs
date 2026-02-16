@@ -440,7 +440,7 @@ typedGroupBy
 typedGroupBy = from usersTable # select @"name" # groupBy @"name"
 
 typedCountStar
-  :: Q _ (name :: String, cnt :: Int) () _
+  :: Q _ (name :: String, cnt :: BigInt) () _
 typedCountStar = from usersTable
   # select @"name, COUNT(*) AS cnt"
   # groupBy @"name"
@@ -464,14 +464,14 @@ typedMinMax = from usersTable
   # groupBy @"name"
 
 typedHaving
-  :: Q _ (name :: String, cnt :: Int) (minCount :: Int) _
+  :: Q _ (name :: String, cnt :: BigInt) (minCount :: Int) _
 typedHaving = from usersTable
   # select @"name, COUNT(*) AS cnt"
   # groupBy @"name"
   # having @"COUNT(*) > $minCount"
 
 typedFullAggregate
-  :: Q _ (name :: String, cnt :: Int) (min :: Int) _
+  :: Q _ (name :: String, cnt :: BigInt) (min :: Int) _
 typedFullAggregate = from usersTable
   # select @"name, COUNT(*) AS cnt"
   # groupBy @"name"
@@ -480,7 +480,7 @@ typedFullAggregate = from usersTable
   # limit @"10"
 
 typedWhereGroupByHaving
-  :: Q _ (name :: String, cnt :: Int) (age :: Int, minCount :: Int) _
+  :: Q _ (name :: String, cnt :: BigInt) (age :: Int, minCount :: Int) _
 typedWhereGroupByHaving = from usersTable
   # select @"name, COUNT(*) AS cnt"
   # where_ @"age > $age"

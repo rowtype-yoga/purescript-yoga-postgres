@@ -3,6 +3,7 @@ module Test.Postgres.EdgeCases where
 import Prelude
 
 import Data.Maybe (Maybe)
+import JS.BigInt (BigInt)
 import Prim.Boolean (True)
 import Type.Function (type (#))
 import Type.Proxy (Proxy(..))
@@ -34,7 +35,7 @@ postsTable = Proxy
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 havingMergesWhereParams
-  :: Q _ (name :: String, cnt :: Int) (age :: Int, minCount :: Int) _
+  :: Q _ (name :: String, cnt :: BigInt) (age :: Int, minCount :: Int) _
 havingMergesWhereParams = from usersTable
   # select @"name, COUNT(*) AS cnt"
   # where_ @"age > $age"
