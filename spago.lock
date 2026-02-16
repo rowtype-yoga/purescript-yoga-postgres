@@ -9,6 +9,9 @@
               "aff": ">=7.1.0 <8.0.0"
             },
             {
+              "arrays": ">=7.3.0 <8.0.0"
+            },
+            {
               "datetime": ">=6.1.0 <7.0.0"
             },
             {
@@ -16,6 +19,12 @@
             },
             {
               "either": ">=6.1.0 <7.0.0"
+            },
+            {
+              "enums": ">=6.0.1 <7.0.0"
+            },
+            {
+              "exceptions": ">=6.1.0 <7.0.0"
             },
             {
               "foldable-traversable": ">=6.0.0 <7.0.0"
@@ -27,10 +36,22 @@
               "heterogeneous": ">=0.6.0 <0.7.0"
             },
             {
+              "integers": ">=6.0.0 <7.0.0"
+            },
+            {
+              "js-bigints": ">=2.2.1 <3.0.0"
+            },
+            {
+              "js-date": ">=8.0.0 <9.0.0"
+            },
+            {
               "js-promise": ">=1.0.0 <2.0.0"
             },
             {
               "js-promise-aff": ">=1.0.0 <2.0.0"
+            },
+            {
+              "lists": ">=7.0.0 <8.0.0"
             },
             {
               "maybe": ">=6.0.0 <7.0.0"
@@ -42,16 +63,31 @@
               "nullable": ">=6.0.0 <7.0.0"
             },
             {
+              "numbers": ">=9.0.1 <10.0.0"
+            },
+            {
               "ordered-collections": ">=3.2.0 <4.0.0"
             },
             {
               "prelude": ">=6.0.2 <7.0.0"
             },
             {
+              "record": ">=4.0.0 <5.0.0"
+            },
+            {
+              "strings": ">=6.0.1 <7.0.0"
+            },
+            {
+              "transformers": ">=6.1.0 <7.0.0"
+            },
+            {
+              "typelevel-prelude": ">=7.0.0 <8.0.0"
+            },
+            {
               "unsafe-coerce": ">=6.0.0 <7.0.0"
             },
             {
-              "uuid": "*"
+              "uuid": ">=9.0.0 <10.0.0"
             },
             {
               "yoga-json": ">=5.2.0 <6.0.0"
@@ -82,11 +118,7 @@
         }
       }
     },
-    "extra_packages": {
-      "uuid": {
-        "path": "../purescript-uuid"
-      }
-    }
+    "extra_packages": {}
   },
   "packages": {
     "aff": {
@@ -924,8 +956,9 @@
       "dependencies": []
     },
     "uuid": {
-      "type": "local",
-      "path": "../purescript-uuid",
+      "type": "registry",
+      "version": "9.0.0",
+      "integrity": "sha256-aM/9+7xlHs5UDdtRfoEQosPpYOruwowa3sezIodJ3vk=",
       "dependencies": [
         "effect",
         "maybe",
@@ -1018,13 +1051,13 @@
     },
     "yoga-test-docker": {
       "type": "registry",
-      "version": "0.1.0",
-      "integrity": "sha256-fTd7UZ1W4w3R7sY2OJhoiFqf6Ma6ycQM/4lq9dQnkgs=",
+      "version": "0.1.1",
+      "integrity": "sha256-BKyHoGahs1D5PbjqSKL+6vvUJQ62mbpXYJOF9UwaGb8=",
       "dependencies": [
         "aff",
         "datetime",
-        "effect",
         "exceptions",
+        "newtype",
         "prelude"
       ]
     },

@@ -3,3 +3,4 @@ node_modules/
 output/
 output-*/
 .DS_Store
+.psc-ide-port
