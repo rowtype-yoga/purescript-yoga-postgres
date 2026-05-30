@@ -4,6 +4,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
 import Effect.Aff (Aff, bracket, launchAff_, throwError, try)
 import Effect.Class (liftEffect)
@@ -433,11 +434,11 @@ main = launchAff_ do
   bracket
     ( do
         liftEffect $ log "Starting Postgres and waiting for it to be ready..."
-        Docker.startService "docker-compose.test.yml" 30
+        Docker.startService (Docker.ComposeFile "docker-compose.test.yml") (Docker.Timeout (Milliseconds 30000.0))
         liftEffect $ log "Postgres is ready!\n"
     )
     ( \_ -> do
-        Docker.stopService "docker-compose.test.yml"
+        Docker.stopService (Docker.ComposeFile "docker-compose.test.yml")
         liftEffect $ log "Cleanup complete\n"
     )
     (\_ -> runSpec [ consoleReporter ] spec)
