@@ -33,7 +33,7 @@
               "foreign": ">=7.0.0 <8.0.0"
             },
             {
-              "heterogeneous": ">=0.6.0 <0.7.0"
+              "heterogeneous": ">=0.7.0 <0.8.0"
             },
             {
               "integers": ">=6.0.0 <7.0.0"
@@ -90,10 +90,10 @@
               "uuid": ">=9.0.0 <10.0.0"
             },
             {
-              "yoga-json": ">=5.2.0 <6.0.0"
+              "yoga-json": ">=5.2.1 <6.0.0"
             },
             {
-              "yoga-sql-types": ">=0.1.0 <0.2.0"
+              "yoga-sql-types": ">=0.2.0 <0.3.0"
             }
           ]
         },
@@ -475,8 +475,8 @@
     },
     "heterogeneous": {
       "type": "registry",
-      "version": "0.6.0",
-      "integrity": "sha256-nQgk2iHYe5LIi6ZzREgWaCU3y8oCwdhDSukT6xVMWdk=",
+      "version": "0.7.0",
+      "integrity": "sha256-pQwcFvhWL8noktxaoD7FlLs2F2lYf3QHoyO0VOWO3I0=",
       "dependencies": [
         "either",
         "foldable-traversable",
@@ -983,8 +983,8 @@
     },
     "yoga-json": {
       "type": "registry",
-      "version": "5.2.0",
-      "integrity": "sha256-M+kkz6E1Gf+C4bKnhqoBFIoVcc74loi3rLULePbB204=",
+      "version": "5.2.1",
+      "integrity": "sha256-12I7qIf27oKV/D/YRcHtGpN8n7GQ0Bm3uzvI4ZjOQrs=",
       "dependencies": [
         "arrays",
         "bifunctors",
@@ -1022,8 +1022,8 @@
     },
     "yoga-sql-types": {
       "type": "registry",
-      "version": "0.1.0",
-      "integrity": "sha256-vxOgnj3HK8F5gRHCNkIPNirORQtCBEKozG+CnrHtB84=",
+      "version": "0.2.0",
+      "integrity": "sha256-/fiSiEmSQ8UH2N7vp/E02Eo+Krbs6iGcre9haDV34Q8=",
       "dependencies": [
         "arrays",
         "bifunctors",
@@ -1051,8 +1051,8 @@
     },
     "yoga-test-docker": {
       "type": "registry",
-      "version": "0.1.1",
-      "integrity": "sha256-BKyHoGahs1D5PbjqSKL+6vvUJQ62mbpXYJOF9UwaGb8=",
+      "version": "0.1.2",
+      "integrity": "sha256-J/jgHvvwb04ZOhicRGucmrQhaokrYTc9XJ2dutsktq8=",
       "dependencies": [
         "aff",
         "datetime",
